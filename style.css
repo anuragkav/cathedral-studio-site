@@ -1,0 +1,96 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: #0a0a0a;
+  color: #eaeaea;
+  font-family: 'Times New Roman', Georgia, serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.bar {
+  padding: 1.5rem 2rem;
+  text-align: center;
+}
+
+.wordmark {
+  letter-spacing: 0.35em;
+  font-size: 0.85rem;
+}
+
+.hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2rem;
+}
+
+.hero h1 {
+  font-size: clamp(2rem, 6vw, 3.5rem);
+  font-weight: 400;
+  margin-bottom: 0.75rem;
+}
+
+.sub {
+  color: #999;
+  margin-bottom: 2.5rem;
+  font-size: 1rem;
+}
+
+.waitlist-form {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.waitlist-form input {
+  background: transparent;
+  border: 1px solid #444;
+  color: #eaeaea;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  min-width: 260px;
+  font-family: inherit;
+}
+
+.waitlist-form input:focus {
+  outline: none;
+  border-color: #eaeaea;
+}
+
+.waitlist-form button {
+  background: #eaeaea;
+  color: #0a0a0a;
+  border: 1px solid #eaeaea;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.waitlist-form button:hover {
+  background: transparent;
+  color: #eaeaea;
+}
+
+.form-message {
+  margin-top: 1rem;
+  min-height: 1.2rem;
+  font-size: 0.9rem;
+  color: #999;
+}
+
+.disclosure {
+  color: #555;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
