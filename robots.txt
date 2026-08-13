@@ -1,0 +1,6 @@
+User-agent: *
+Disallow: /account.html
+Disallow: /checkout.html
+Allow: /
+
+Sitemap: https://anuragkav.github.io/cathedral-studio-site/sitemap.xml
