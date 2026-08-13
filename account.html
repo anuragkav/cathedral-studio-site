@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Account — Cathedral Studio</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="account.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+<script src="config.js" defer></script>
+<script src="validators.js" defer></script>
+<script src="auth.js" defer></script>
+<script src="account.js" defer></script>
+</head>
+<body>
+
+<nav class="nav">
+  <a href="index.html#top" class="nav-mark">CATHEDRAL STUDIO</a>
+  <div class="nav-links">
+    <a href="index.html#men">Men</a>
+    <a href="index.html#women">Women</a>
+    <a href="account.html">Account</a>
+  </div>
+</nav>
+
+<main class="account-main">
+
+  <!-- Shown until the initial session check resolves, so the page never
+       flashes blank before settling on the right panel. -->
+  <div id="account-loading" class="account-loading" aria-hidden="true"></div>
+
+  <!-- Signed-out: sign in -->
+  <section id="panel-signin" class="account-panel" hidden>
+    <p class="account-eyebrow">Access</p>
+    <h1 class="account-title">Sign in</h1>
+    <form id="signin-form" class="account-form" novalidate>
+      <label for="signin-email">Email</label>
+      <input type="email" id="signin-email" name="email" autocomplete="email" required>
+      <label for="signin-password">Password</label>
+      <input type="password" id="signin-password" name="password" autocomplete="current-password" required>
+      <button type="submit">Sign in</button>
+    </form>
+    <p class="account-msg" data-for="signin" aria-live="polite"></p>
+    <button id="resend-confirmation-btn" class="account-signout" type="button" hidden>Resend confirmation email</button>
+    <p class="account-switch">
+      No account? <a href="#" data-panel="signup">Create one</a> ·
+      <a href="#" data-panel="forgot">Forgot password</a>
+    </p>
+  </section>
+
+  <!-- Signed-out: sign up -->
+  <section id="panel-signup" class="account-panel" hidden>
+    <p class="account-eyebrow">Access</p>
+    <h1 class="account-title">Create an account</h1>
+    <form id="signup-form" class="account-form" novalidate>
+      <label for="signup-email">Email</label>
+      <input type="email" id="signup-email" name="email" autocomplete="email" required>
+      <label for="signup-password">Password</label>
+      <input type="password" id="signup-password" name="password" autocomplete="new-password" required minlength="12">
+      <p class="account-hint">At least 12 characters.</p>
+      <button type="submit">Create account</button>
+    </form>
+    <p class="account-msg" data-for="signup" aria-live="polite"></p>
+    <p class="account-switch">Already have an account? <a href="#" data-panel="signin">Sign in</a></p>
+  </section>
+
+  <!-- Signed-out: forgot password -->
+  <section id="panel-forgot" class="account-panel" hidden>
+    <p class="account-eyebrow">Access</p>
+    <h1 class="account-title">Reset your password</h1>
+    <form id="forgot-form" class="account-form" novalidate>
+      <label for="forgot-email">Email</label>
+      <input type="email" id="forgot-email" name="email" autocomplete="email" required>
+      <button type="submit">Send reset link</button>
+    </form>
+    <p class="account-msg" data-for="forgot" aria-live="polite"></p>
+    <p class="account-switch"><a href="#" data-panel="signin">Back to sign in</a></p>
+  </section>
+
+  <!-- Recovery link landing: set a new password -->
+  <section id="panel-update-password" class="account-panel" hidden>
+    <p class="account-eyebrow">Access</p>
+    <h1 class="account-title">Set a new password</h1>
+    <form id="update-password-form" class="account-form" novalidate>
+      <label for="update-password">New password</label>
+      <input type="password" id="update-password" name="password" autocomplete="new-password" required minlength="12">
+      <p class="account-hint">At least 12 characters.</p>
+      <button type="submit">Update password</button>
+    </form>
+    <p class="account-msg" data-for="update-password" aria-live="polite"></p>
+  </section>
+
+  <!-- Signed-in: account overview -->
+  <section id="panel-account" class="account-panel" hidden>
+    <p class="account-eyebrow">Account</p>
+    <h1 class="account-title">Your account</h1>
+    <dl class="account-details">
+      <dt>Email</dt>
+      <dd id="account-email"></dd>
+    </dl>
+    <form id="name-form" class="account-form" novalidate>
+      <label for="display-name">Display name</label>
+      <input type="text" id="display-name" name="displayName" maxlength="80" autocomplete="name">
+      <button type="submit">Save</button>
+    </form>
+    <p class="account-msg" data-for="name" aria-live="polite"></p>
+    <button id="signout-btn" class="account-signout" type="button">Sign out</button>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="footer-top">
+    <span class="footer-mark">CATHEDRAL STUDIO</span>
+    <div class="footer-links">
+      <a href="index.html#men">Men</a>
+      <a href="index.html#women">Women</a>
+      <a href="account.html">Account</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "name": "cathedral-studio-site",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Dev-only test tooling for the static site. The site itself ships with no build step and no runtime dependencies.",
+  "scripts": {
+    "test:unit": "node --test test/unit",
+    "test:e2e": "playwright test",
+    "test": "npm run test:unit && npm run test:e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.45.3",
+    "http-server": "^14.1.1"
+  }
+}
