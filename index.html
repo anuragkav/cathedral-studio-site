@@ -3,30 +3,118 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cathedral Studio</title>
+<title>Cathedral Studio — Collection I</title>
+<meta name="description" content="Cathedral Studio. Tailoring for men and women. Produced in limited number.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500&family=Inter:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<header class="bar">
-  <span class="wordmark">CATHEDRAL STUDIO</span>
+<p class="announce">Made to order — nothing shipped until it's confirmed. Continental US shipping included.</p>
+
+<nav class="nav">
+  <a href="#top" class="nav-mark">CATHEDRAL STUDIO</a>
+  <div class="nav-links">
+    <a href="#men">Men</a>
+    <a href="#women">Women</a>
+    <a href="#story">About</a>
+    <a href="#waitlist">Waitlist</a>
+    <a href="account.html">Account</a>
+    <a href="checkout.html" class="nav-cart">Cart <span id="cart-badge" class="cart-badge" hidden></span></a>
+  </div>
+</nav>
+
+<header id="top" class="hero">
+  <img class="hero-image" src="https://images.unsplash.com/photo-1550928431-ee0ec6db30d3?w=1800&q=80&auto=format&fit=crop" alt="" role="presentation">
+  <div class="hero-copy">
+    <p class="hero-eyebrow">Collection I — In Production</p>
+    <h1 class="hero-mark">Discover the<br>first collection</h1>
+    <a href="#men" class="hero-cta">Enter</a>
+  </div>
 </header>
 
-<main class="hero">
-  <h1>Something is coming.</h1>
-  <p class="sub">Limited drops. No stock held. Get notified before the first one.</p>
+<section class="tiles">
+  <a href="#men" class="tile">
+    <img src="https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=900&q=80&auto=format&fit=crop" alt="">
+    <span class="tile-label">Menswear</span>
+  </a>
+  <a href="#women" class="tile">
+    <img src="https://images.unsplash.com/photo-1483985988355-763728e1935b?w=900&q=80&auto=format&fit=crop" alt="">
+    <span class="tile-label">Womenswear</span>
+  </a>
+</section>
+
+<section id="story" class="story">
+  <div class="story-block">
+    <img class="story-image" src="https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=1400&q=80&auto=format&fit=crop" alt="">
+    <div class="story-copy">
+      <p class="story-eyebrow">The House</p>
+      <h2 class="story-title">Built the way a small house should be built</h2>
+      <p class="story-text">A short list of pieces, made once demand for them is confirmed, in the quantity that was actually asked for. Nothing here is mass-produced against a forecast, and nothing ships before it exists.</p>
+      <a href="#men" class="story-link">View the collection</a>
+    </div>
+  </div>
+
+  <div class="story-block story-block--reverse">
+    <img class="story-image" src="https://images.unsplash.com/photo-1554412933-514a83d2f3c8?w=1400&q=80&auto=format&fit=crop" alt="">
+    <div class="story-copy">
+      <p class="story-eyebrow">Made to Order</p>
+      <h2 class="story-title">Twenty-eight pieces, priced for what they are</h2>
+      <p class="story-text">Wool, cashmere, waxed cotton, silk charmeuse, selvedge denim. Cut close, finished by hand where it matters, and priced without the markup a forecast-driven house has to build in.</p>
+      <a href="#waitlist" class="story-link">Join the waitlist</a>
+    </div>
+  </div>
+</section>
+
+<section id="men" class="collection">
+  <div class="collection-head">
+    <p class="collection-eyebrow">Collection I</p>
+    <h2 class="collection-title">Menswear</h2>
+    <p class="collection-blurb">Fourteen pieces. Wool, cashmere, waxed cotton, selvedge denim. Cut close, finished by hand where it matters.</p>
+  </div>
+  <div id="men-grid" class="grid"></div>
+</section>
+
+<section id="women" class="collection collection--alt">
+  <div class="collection-head">
+    <p class="collection-eyebrow">Collection I</p>
+    <h2 class="collection-title">Womenswear</h2>
+    <p class="collection-blurb">Fourteen pieces. Bias-cut silk, wool crepe, cashmere rib. Structured where it should be, and nowhere else.</p>
+  </div>
+  <div id="women-grid" class="grid"></div>
+</section>
+
+<section id="waitlist" class="waitlist">
+  <p class="waitlist-eyebrow">Access</p>
+  <h2 class="waitlist-title">The first drop is by list, not by storefront.</h2>
+  <p class="waitlist-line">Join to be notified before quantities are released. No payment is collected here.</p>
 
   <form id="waitlist-form" class="waitlist-form">
     <input type="email" id="email" name="email" placeholder="you@email.com" required autocomplete="email">
-    <button type="submit">Notify me</button>
+    <button type="submit">Request Access</button>
   </form>
   <p id="form-message" class="form-message" aria-live="polite"></p>
-</main>
+</section>
 
-<footer class="bar">
-  <p class="disclosure">All imagery on this site is AI-generated. Nothing you see is a photograph.</p>
+<footer class="footer">
+  <div class="footer-top">
+    <span class="footer-mark">CATHEDRAL STUDIO</span>
+    <div class="footer-links">
+      <a href="#men">Men</a>
+      <a href="#women">Women</a>
+      <a href="#waitlist">Waitlist</a>
+      <a href="account.html">Account</a>
+    </div>
+  </div>
+  <p class="disclosure">Every photograph above is a placeholder image, not a photograph of this collection's actual garments — no product photography exists yet. No garment shown has been manufactured; prices and materials are the current production plan and may change before a piece is released. This page does not process payment.</p>
+  <p class="copyright">&copy; Cathedral Studio. Made to order, not to forecast.</p>
 </footer>
 
+<script src="products.js"></script>
 <script src="script.js"></script>
+<script src="cart.js"></script>
+<script src="shop.js"></script>
 </body>
 </html>
