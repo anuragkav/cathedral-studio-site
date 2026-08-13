@@ -2,4 +2,7 @@
 node_modules/
 test-results/
 playwright-report/
+test/integration/.pgdata/
+*.tmp.js
+
 

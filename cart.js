@@ -131,11 +131,13 @@
       }
       // Storage (localStorage) is client-controlled and can be hand-edited
       // or corrupted independently of anything this module ever wrote, so
-      // a raw blob can legally contain two lines sharing one id. Routing
-      // every line through addItem (rather than pushing directly) reuses
-      // its merge-and-clamp behavior instead of re-deriving it here, so
-      // MAX_QTY_PER_LINE holds even for hand-crafted/tampered storage.
-      let cart = createEmptyCart();
+      // a raw blob can legally contain two lines sharing one id, or contain
+      // thousands of lines (a tampered/bot-written cart). Merge by id via a
+      // Map in a single O(n) pass instead of routing each line through
+      // addItem's full-array clone — that would make deserialize (which
+      // runs on every page load) O(n^2) and turn a large tampered cart into
+      // a multi-second hang.
+      const byId = new Map();
       for (const line of parsed.items) {
         if (!line || typeof line !== "object") continue;
         if (typeof line.id !== "string" || line.id.trim() === "") continue;
@@ -143,12 +145,17 @@
         if (typeof line.price !== "number" || !Number.isFinite(line.price) || line.price <= 0) continue;
         const qty = clampQty(line.qty);
         if (qty === 0) continue;
-        const item = { id: line.id, name: line.name, price: line.price };
+        const existing = byId.get(line.id);
+        if (existing) {
+          existing.qty = clampQty(existing.qty + qty);
+          continue;
+        }
+        const item = { id: line.id, name: line.name, price: line.price, qty: qty };
         if (typeof line.cat === "string") item.cat = line.cat;
         if (typeof line.fabric === "string") item.fabric = line.fabric;
-        cart = addItem(cart, item, qty);
+        byId.set(line.id, item);
       }
-      return cart;
+      return { items: Array.from(byId.values()) };
     } catch (err) {
       return createEmptyCart();
     }
@@ -173,8 +180,17 @@
         if (raw === null || raw === undefined) return createEmptyCart();
         return deserialize(raw);
       },
+      // Returns true/false rather than throwing — storage.setItem can throw
+      // (QuotaExceededError) on a very large or maliciously bloated cart,
+      // and an uncaught exception here would break every UI action (qty
+      // change, remove, add) with no feedback to the shopper.
       save: function (cart) {
-        backing.setItem(STORAGE_KEY, serialize(cart));
+        try {
+          backing.setItem(STORAGE_KEY, serialize(cart));
+          return true;
+        } catch (err) {
+          return false;
+        }
       },
       clear: function () {
         backing.removeItem(STORAGE_KEY);

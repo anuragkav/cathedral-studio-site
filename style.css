@@ -9,7 +9,7 @@
   --paper: #f4f1ec;
   --paper-dim: #ece7de;
   --line: #d8d2c5;
-  --muted: #6f6a5e;
+  --muted: #645f53;
   --accent: #7a1f1f;
 }
 
@@ -34,6 +34,18 @@ a {
   text-decoration: none;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ---------- announcement strip ---------- */
 
 .announce {
@@ -56,6 +68,7 @@ a {
   justify-content: space-between;
   padding: 1.25rem 3rem;
   background: rgba(244, 241, 236, 0.92);
+  -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   border-bottom: 1px solid var(--line);
 }
@@ -82,6 +95,106 @@ a {
 
 .nav-links a:hover {
   border-color: var(--ink);
+}
+
+.nav-toggle {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.nav-toggle span {
+  display: block;
+  width: 1.5rem;
+  height: 2px;
+  background: var(--ink);
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.nav-toggle:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.nav.nav-open .nav-toggle span:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+
+.nav.nav-open .nav-toggle span:nth-child(2) {
+  opacity: 0;
+}
+
+.nav.nav-open .nav-toggle span:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-toggle span {
+    transition: none;
+  }
+}
+
+/* Below this width, .nav-links (up to 6 links on the homepage) no longer
+   fits alongside the wordmark, so the plain links collapse behind
+   .nav-toggle. .nav-cart (index.html only) stays visible either way —
+   the cart count is state the shopper needs, not a navigation link.
+
+   Hiding is scoped to .js-nav (added by nav.js once it runs) rather than
+   applying unconditionally: with JS absent/blocked, .nav-toggle stays
+   display:none and every link stays visible and reachable, just not
+   collapsed into a hamburger — true progressive enhancement instead of
+   a dead button with unreachable links behind it. */
+@media (max-width: 860px) {
+  .nav {
+    flex-wrap: wrap;
+    padding: 1rem 1.25rem;
+  }
+
+  .nav.js-nav .nav-toggle {
+    display: flex;
+    margin-left: auto;
+  }
+
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .nav.js-nav .nav-links a:not(.nav-cart) {
+    display: none;
+  }
+
+  .nav.js-nav.nav-open .nav-links {
+    flex-basis: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1.25rem;
+    width: 100%;
+    padding: 1.5rem 0 0.5rem;
+  }
+
+  .nav.js-nav.nav-open .nav-links a:not(.nav-cart) {
+    display: block;
+  }
+
+  .nav.js-nav.nav-open .nav-links a {
+    padding: 0.6rem 0;
+  }
+}
+
+@media (max-width: 380px) {
+  .nav-mark {
+    font-size: 0.8rem;
+    letter-spacing: 0.2em;
+  }
 }
 
 /* ---------- hero (full-bleed campaign image) ---------- */
@@ -324,6 +437,20 @@ a {
   .grid { grid-template-columns: 1fr; }
 }
 
+/* .waitlist-form input has a 280px min-width for the two-up desktop
+   layout; below 400px that alone exceeds the viewport (e.g. 320px on
+   iPhone SE), so drop the floor and stack the field above the button. */
+@media (max-width: 400px) {
+  .waitlist-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .waitlist-form input {
+    min-width: 0;
+  }
+}
+
 /* ---------- product card ---------- */
 
 .card {
@@ -560,7 +687,8 @@ a {
 
 .footer-links {
   display: flex;
-  gap: 1.75rem;
+  flex-wrap: wrap;
+  gap: 1rem 1.75rem;
   font-size: 0.78rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -582,4 +710,23 @@ a {
   margin: 0.9rem auto 0;
   color: var(--muted);
   font-size: 0.72rem;
+}
+
+/* ---------- storage-error toast ---------- */
+
+.storage-error-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.5rem;
+  transform: translateX(-50%);
+  z-index: 50;
+  max-width: 26rem;
+  margin: 0;
+  padding: 0.85rem 1.25rem;
+  background: var(--ink);
+  color: var(--paper);
+  border: 1px solid var(--accent);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  text-align: center;
 }

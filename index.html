@@ -47,7 +47,10 @@
 
 <nav class="nav">
   <a href="#top" class="nav-mark">CATHEDRAL STUDIO</a>
-  <div class="nav-links">
+  <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="nav-links" aria-label="Menu">
+    <span></span><span></span><span></span>
+  </button>
+  <div id="nav-links" class="nav-links">
     <a href="#men">Men</a>
     <a href="#women">Women</a>
     <a href="#story">About</a>
@@ -123,6 +126,7 @@
   <p class="waitlist-line">Join to be notified before quantities are released. No payment is collected here.</p>
 
   <form id="waitlist-form" class="waitlist-form">
+    <label for="email" class="sr-only">Email</label>
     <input type="email" id="email" name="email" placeholder="you@email.com" required autocomplete="email">
     <button type="submit">Request Access</button>
   </form>
@@ -147,5 +151,6 @@
 <script src="script.js"></script>
 <script src="cart.js"></script>
 <script src="shop.js"></script>
+<script src="nav.js"></script>
 </body>
 </html>

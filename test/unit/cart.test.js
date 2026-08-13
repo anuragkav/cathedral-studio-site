@@ -306,3 +306,68 @@ test("clampQty handles non-numeric input by returning 0", () => {
 test("clampQty accepts numeric strings", () => {
   assert.equal(Cart.clampQty("4"), 4);
 });
+
+test("deserialize scales linearly, not quadratically, with a large number of lines", () => {
+  const n = 20000;
+  const items = [];
+  for (let i = 0; i < n; i++) items.push({ id: "item-" + i, name: "Item " + i, price: 10, qty: 1 });
+  const raw = JSON.stringify({ items });
+
+  const start = process.hrtime.bigint();
+  const cart = Cart.deserialize(raw);
+  const ms = Number(process.hrtime.bigint() - start) / 1e6;
+
+  assert.equal(cart.items.length, n);
+  // A quadratic implementation takes seconds at this size (confirmed by
+  // profiling); a linear one finishes in well under 500ms even on a slow
+  // CI box. This is a regression guard for that specific failure mode,
+  // not a tight perf budget.
+  assert.ok(ms < 500, `deserialize on ${n} lines took ${ms.toFixed(1)}ms, expected well under 500ms`);
+});
+
+test("deserialize merges duplicate ids by summing and clamping qty, in one pass", () => {
+  const raw = JSON.stringify({
+    items: [
+      { id: "a", name: "A", price: 10, qty: 3 },
+      { id: "b", name: "B", price: 5, qty: 1 },
+      { id: "a", name: "A again", price: 10, qty: 4 }
+    ]
+  });
+  const cart = Cart.deserialize(raw);
+  assert.deepEqual(cart.items, [
+    { id: "a", name: "A", price: 10, qty: 7 },
+    { id: "b", name: "B", price: 5, qty: 1 }
+  ]);
+});
+
+test("deserialize clamps a merged duplicate-id qty at MAX_QTY_PER_LINE", () => {
+  const raw = JSON.stringify({
+    items: [
+      { id: "a", name: "A", price: 10, qty: 8 },
+      { id: "a", name: "A", price: 10, qty: 8 }
+    ]
+  });
+  const cart = Cart.deserialize(raw);
+  assert.equal(cart.items.length, 1);
+  assert.equal(cart.items[0].qty, Cart.MAX_QTY_PER_LINE);
+});
+
+test("createStore.save returns true on success and false (not throwing) when storage.setItem throws", () => {
+  const okStorage = Cart.createMemoryStorage();
+  const okStore = Cart.createStore(okStorage);
+  assert.equal(okStore.save(Cart.createEmptyCart()), true);
+
+  const quotaExceededStorage = {
+    getItem: () => null,
+    setItem: () => {
+      const err = new Error("QuotaExceededError");
+      err.name = "QuotaExceededError";
+      throw err;
+    },
+    removeItem: () => {}
+  };
+  const failingStore = Cart.createStore(quotaExceededStorage);
+  let result;
+  assert.doesNotThrow(() => { result = failingStore.save(Cart.createEmptyCart()); });
+  assert.equal(result, false);
+});
