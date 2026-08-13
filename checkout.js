@@ -15,6 +15,11 @@
   const summaryTotalEl = document.getElementById("summary-total");
   const form = document.getElementById("checkout-form");
   const confirmationEl = document.getElementById("checkout-confirmation");
+  const storageErrorEl = document.getElementById("storage-error");
+
+  function showStorageErrorIfSaveFailed(saved) {
+    if (storageErrorEl) storageErrorEl.hidden = saved;
+  }
 
   function renderLine(line) {
     const el = document.createElement("div");
@@ -70,15 +75,21 @@
     cartContentEl.hidden = isEmpty;
     if (isEmpty) return;
 
-    cartLinesEl.innerHTML = "";
+    // Build off-DOM and append once — appending each line directly to the
+    // live, attached cartLinesEl would force a style/layout pass per line,
+    // which turns an already-rare huge cart into a multi-second hang.
+    const fragment = document.createDocumentFragment();
     cart.items.forEach(function (line) {
-      cartLinesEl.appendChild(renderLine(line));
+      fragment.appendChild(renderLine(line));
     });
+    cartLinesEl.innerHTML = "";
+    cartLinesEl.appendChild(fragment);
 
-    summarySubtotalEl.textContent = Validation.formatCurrency(Cart.getSubtotal(cart));
+    const subtotal = Cart.getSubtotal(cart);
     const shipping = Cart.getShipping(cart);
+    summarySubtotalEl.textContent = Validation.formatCurrency(subtotal);
     summaryShippingEl.textContent = shipping === 0 ? "Free" : Validation.formatCurrency(shipping);
-    summaryTotalEl.textContent = Validation.formatCurrency(Cart.getTotal(cart));
+    summaryTotalEl.textContent = Validation.formatCurrency(subtotal + shipping);
   }
 
   function onCartLinesClick(event) {
@@ -88,16 +99,18 @@
     const action = button.dataset.action;
     const cart = store.load();
 
+    let saved;
     if (action === "remove") {
-      store.save(Cart.removeItem(cart, id));
+      saved = store.save(Cart.removeItem(cart, id));
     } else if (action === "increase" || action === "decrease") {
       const line = cart.items.find(function (l) { return l.id === id; });
       if (!line) return;
       const delta = action === "increase" ? 1 : -1;
-      store.save(Cart.updateQty(cart, id, line.qty + delta));
+      saved = store.save(Cart.updateQty(cart, id, line.qty + delta));
     } else {
       return;
     }
+    showStorageErrorIfSaveFailed(saved);
     renderCart();
   }
 
@@ -116,7 +129,7 @@
       renderCart();
       return;
     }
-    store.save(Cart.updateQty(cart, id, typed));
+    showStorageErrorIfSaveFailed(store.save(Cart.updateQty(cart, id, typed)));
     renderCart();
   }
 

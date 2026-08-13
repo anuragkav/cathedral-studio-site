@@ -327,3 +327,33 @@ test("each cart line's decrease/increase/remove controls have a distinct, item-s
   await expect(removeOvercoat).toHaveAttribute("aria-label", /Nave Overcoat/);
   await expect(removeTee).toHaveAttribute("aria-label", /Narthex Tee/);
 });
+
+test("a quantity change that exceeds localStorage quota shows a visible error instead of failing silently", async ({ page }) => {
+  await page.goto("/checkout.html");
+  await page.evaluate(() => {
+    function cartJSON(n) {
+      const items = [];
+      for (let i = 0; i < n; i++) {
+        items.push({ id: "pad-" + i, name: "Padding Item " + i, price: 10, qty: 1, cat: "Outerwear", fabric: "Wool" });
+      }
+      return JSON.stringify({ items });
+    }
+    localStorage.clear();
+    let lo = 0, hi = 200000;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi + 1) / 2);
+      try {
+        localStorage.setItem("cathedral_cart_v1", cartJSON(mid));
+        lo = mid;
+      } catch (e) {
+        hi = mid - 1;
+      }
+    }
+    localStorage.setItem("cathedral_cart_v1", cartJSON(lo));
+  });
+  await page.reload();
+  await expect(page.locator(".cart-line").first()).toBeVisible();
+
+  await page.click('[data-action="increase"]');
+  await expect(page.locator("#storage-error")).toBeVisible();
+});

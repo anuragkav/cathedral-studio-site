@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cathedral Studio — Cart &amp; Checkout</title>
 <meta name="robots" content="noindex">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500&family=Inter:wght@400;500&display=swap" rel="stylesheet">
@@ -15,7 +16,10 @@
 
 <nav class="nav">
   <a href="index.html#top" class="nav-mark">CATHEDRAL STUDIO</a>
-  <div class="nav-links">
+  <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="nav-links" aria-label="Menu">
+    <span></span><span></span><span></span>
+  </button>
+  <div id="nav-links" class="nav-links">
     <a href="index.html#men">Men</a>
     <a href="index.html#women">Women</a>
     <a href="index.html#waitlist">Waitlist</a>
@@ -27,6 +31,8 @@
   <h1>Your Cart</h1>
   <p class="checkout-disclosure">This is a design preview of checkout. No payment is processed and no card is charged. Submitting reserves nothing — it only previews the flow.</p>
 </header>
+
+<p id="storage-error" class="storage-error" role="alert" hidden>Your cart couldn't be saved — your browser's storage for this site is full. Try removing a few items.</p>
 
 <section id="cart-empty" class="cart-empty" hidden>
   <p>Your cart is empty.</p>
@@ -204,5 +210,6 @@
 <script src="cart.js"></script>
 <script src="validation.js"></script>
 <script src="checkout.js"></script>
+<script src="nav.js"></script>
 </body>
 </html>

@@ -32,6 +32,18 @@
   max-width: 34rem;
 }
 
+.storage-error {
+  display: block;
+  max-width: 34rem;
+  margin: 0 auto 2rem;
+  padding: 0.85rem 1.25rem;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
 /* ---------- empty cart ---------- */
 
 .cart-empty {
@@ -144,8 +156,8 @@
 }
 
 .qty-btn {
-  width: 1.9rem;
-  height: 1.9rem;
+  width: 2.75rem;
+  height: 2.75rem;
   border: 1px solid var(--line);
   background: transparent;
   color: var(--ink);
@@ -200,7 +212,7 @@
   text-underline-offset: 0.2em;
   cursor: pointer;
   font-family: inherit;
-  padding: 0;
+  padding: 0.6rem 0;
   flex-shrink: 0;
 }
 
