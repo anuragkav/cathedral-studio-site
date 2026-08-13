@@ -54,17 +54,25 @@
 
   const auth = {
     async signUp({ email, password }) {
-      if (usersByEmail.has(email)) {
-        return { data: null, error: { message: "User already registered" } };
+      const existing = usersByEmail.get(email);
+      // Real Supabase-js (with email confirmations on) does NOT return an
+      // `error` for a duplicate, already-confirmed email — it returns
+      // data.user with an empty `identities` array and error: null, so a
+      // signup attempt can't be used to enumerate confirmed accounts via
+      // an error message. auth.js's signUp() has to check `identities`,
+      // not `error`, to detect this case; a mock that instead invents an
+      // "already registered" error object (as this one used to) would let
+      // that real-world branch go completely untested.
+      if (existing && existing.confirmed) {
+        return { data: { user: { id: existing.user.id, email, identities: [] }, session: null }, error: null };
       }
-      const user = { id: `user-${usersByEmail.size + 1}`, email };
-      // Real Supabase requires email confirmation before a session exists
-      // (session: null below) and before signInWithPassword succeeds
-      // (confirmed: false here) — both mirrored so auth.js's unconfirmed-
-      // email branch and the "check your email" UI copy are both exercised.
+      // A duplicate signup on an UNCONFIRMED email resends the
+      // confirmation email and returns a normal-looking success — also
+      // no error, also no signal that distinguishes it from a fresh signup.
+      const user = existing ? existing.user : { id: `user-${usersByEmail.size + 1}`, email };
       usersByEmail.set(email, { user, password, confirmed: false, profile: { id: user.id, email, display_name: null } });
       persist();
-      return { data: { user, session: null }, error: null };
+      return { data: { user: { ...user, identities: [{ id: "mock-identity" }] }, session: null }, error: null };
     },
     async signInWithPassword({ email, password }) {
       const record = usersByEmail.get(email);

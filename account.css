@@ -195,6 +195,7 @@
 .account-details dd {
   font-size: 1rem;
   margin-top: 0.25rem;
+  overflow-wrap: break-word;
 }
 
 .account-signout {

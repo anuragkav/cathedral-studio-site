@@ -45,24 +45,39 @@ function assertConfigured() {
   }
 }
 
-async function signUp(email, password) {
+// captchaToken is optional everywhere it appears below: passing undefined
+// (the default) omits Supabase's `options.captchaToken` entirely, which is
+// exactly how these calls behaved before Turnstile existed — a caller on
+// a page with no Turnstile widget, or before turnstile.js loads, doesn't
+// need a code path change to keep working, it just gets no bot protection.
+async function signUp(email, password, captchaToken) {
   assertConfigured();
   if (!validateEmailFormat(email)) throw new Error("Enter a valid email address.");
   if (!validatePasswordFormat(password)) {
     throw new Error(`Password must be at least ${MIN_PW_LEN} characters.`);
   }
-  const { data, error } = await supabaseClient.auth.signUp({ email, password });
-  // An "already registered" error is swallowed rather than surfaced: the
-  // caller shows the same "check your email" copy either way, so a signup
-  // attempt on an existing address can't be used to enumerate accounts.
-  if (error && !/already registered/i.test(error.message || "")) throw new Error(error.message);
+  const options = captchaToken ? { captchaToken } : undefined;
+  const { data, error } = await supabaseClient.auth.signUp({ email, password, options });
+  // Two distinct "this email is already taken" shapes have to be
+  // swallowed the same way, not just one: an explicit `error` (some
+  // Supabase configs/versions do return "User already registered"), and
+  // the shape real Supabase-js actually returns for a duplicate,
+  // already-confirmed email when email confirmations are on — no error
+  // at all, just data.user.identities: [] (GoTrue's documented way of
+  // avoiding account enumeration via the signup endpoint itself). The
+  // caller shows identical "check your email" copy regardless of which
+  // shape came back, so a signup attempt on an existing address can't
+  // be used to enumerate confirmed accounts either way.
+  const isDuplicateError = error && /already registered/i.test(error.message || "");
+  if (error && !isDuplicateError) throw new Error(error.message);
   return data;
 }
 
-async function signIn(email, password) {
+async function signIn(email, password, captchaToken) {
   assertConfigured();
   if (!validateEmailFormat(email) || !validatePasswordFormat(password)) throw genericAuthError();
-  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  const options = captchaToken ? { captchaToken } : undefined;
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password, options });
   if (error) {
     if (isUnconfirmedEmailError(error)) {
       throw Object.assign(new Error("Confirm your email before signing in."), { unconfirmed: true });
@@ -72,12 +87,13 @@ async function signIn(email, password) {
   return data;
 }
 
-async function resendConfirmation(email) {
+async function resendConfirmation(email, captchaToken) {
   assertConfigured();
   if (!validateEmailFormat(email)) throw new Error("Enter a valid email address.");
+  const options = captchaToken ? { captchaToken } : undefined;
   // Errors here are not surfaced distinctly from "sent" for the same
   // enumeration-safety reason as requestPasswordReset below.
-  await supabaseClient.auth.resend({ type: "signup", email });
+  await supabaseClient.auth.resend({ type: "signup", email, options });
 }
 
 async function signOut() {
@@ -85,13 +101,15 @@ async function signOut() {
   if (error) throw new Error(error.message);
 }
 
-async function requestPasswordReset(email) {
+async function requestPasswordReset(email, captchaToken) {
   assertConfigured();
   if (!validateEmailFormat(email)) throw new Error("Enter a valid email address.");
   // redirectTo must be on Supabase's allowlisted Redirect URLs for this
   // project — otherwise Supabase itself rejects the reset link server-side.
   const redirectTo = new URL("account.html?mode=update-password", window.location.origin + window.location.pathname.replace(/[^/]+$/, "")).toString();
-  const { error } = await supabaseClient.auth.resetPasswordForEmail(email, { redirectTo });
+  const opts = { redirectTo };
+  if (captchaToken) opts.captchaToken = captchaToken;
+  const { error } = await supabaseClient.auth.resetPasswordForEmail(email, opts);
   // Never branch on `error` here in a way the caller can distinguish
   // "no such account" from "sent" — both look identical to the UI.
   if (error && error.status && error.status >= 500) throw new Error("Something went wrong. Try again shortly.");

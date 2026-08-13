@@ -67,6 +67,23 @@ test("duplicate signup shows the same confirmation copy as a fresh signup (no ac
   await expect(page.locator('.account-msg[data-for="signup"]')).toHaveText(/check your email/i);
 });
 
+test("duplicate signup against a CONFIRMED account (real Supabase's no-error, empty-identities shape) still shows the same copy", async ({ page }) => {
+  // Regression coverage for a real Supabase-js gotcha: for an
+  // already-confirmed email, real Supabase returns no `error` at all —
+  // just data.user.identities: []. A mock that only ever simulated the
+  // "error: {message: 'already registered'}" shape would let auth.js's
+  // handling of this second shape go completely untested.
+  await page.goto("/account.html");
+  await page.evaluate(() => {
+    window.supabase.createClient().auth.__seedConfirmedUser("confirmed-dup@example.com", "already-registered-1");
+  });
+  await page.click('[data-panel="signup"]');
+  await page.fill("#signup-email", "confirmed-dup@example.com");
+  await page.fill("#signup-password", "another-password-12");
+  await page.click('#signup-form button[type="submit"]');
+  await expect(page.locator('.account-msg[data-for="signup"]')).toHaveText(/check your email/i);
+});
+
 test("login with wrong password shows a generic error", async ({ page }) => {
   await page.goto("/account.html");
   await page.evaluate(() => {
@@ -208,9 +225,11 @@ test("clicking resend shows the same generic copy whether or not the resend call
 
   await page.click("#resend-confirmation-btn");
   await expect(page.locator('.account-msg[data-for="signin"]')).toHaveText(/on its way/i);
-  // The button hides itself immediately on click so it can't be mashed to
-  // fire repeated resend requests for the same address.
-  await expect(page.locator("#resend-confirmation-btn")).toBeHidden();
+  // The button stays visible but goes into a countdown cooldown so it
+  // can't be mashed to fire repeated resend requests for the same address
+  // — the label reflects the remaining seconds, and the button is disabled.
+  await expect(page.locator("#resend-confirmation-btn")).toBeDisabled();
+  await expect(page.locator("#resend-confirmation-btn")).toHaveText(/\d+s/);
 });
 
 test("clicking resend never throws even if the underlying resend call rejects", async ({ page }) => {
@@ -270,6 +289,31 @@ test("a normal sign-in after a recovery session does not stay pinned to the upda
   // A fresh SIGNED_IN event must clear the earlier recovery flag — this
   // login must reach the account panel, not get re-pinned to update-password.
   await expect(page.locator("#panel-account")).toBeVisible();
+});
+
+test("forgot-password button enters a visible cooldown countdown after use", async ({ page }) => {
+  await page.goto("/account.html");
+  await page.click('[data-panel="forgot"]');
+  await page.fill("#forgot-email", "cooldown@example.com");
+  const button = page.locator('#forgot-form button[type="submit"]');
+  await button.click();
+  await expect(page.locator('.account-msg[data-for="forgot"]')).toHaveText(/on its way/i);
+  // Post-click the button must land in cooldown, not fresh — a bot mashing
+  // this endpoint via the UI would otherwise fire up to $networkRTT reqs/sec.
+  await expect(button).toBeDisabled();
+  await expect(button).toHaveText(/\d+s/);
+});
+
+test("forgot-password cooldown survives a reload (sessionStorage-backed)", async ({ page }) => {
+  await page.goto("/account.html");
+  await page.click('[data-panel="forgot"]');
+  await page.fill("#forgot-email", "cooldown-persist@example.com");
+  await page.click('#forgot-form button[type="submit"]');
+  await page.reload();
+  await page.click('[data-panel="forgot"]');
+  const button = page.locator('#forgot-form button[type="submit"]');
+  await expect(button).toBeDisabled();
+  await expect(button).toHaveText(/\d+s/);
 });
 
 test("submit button is disabled while a request is in flight, preventing duplicate submits", async ({ page }) => {

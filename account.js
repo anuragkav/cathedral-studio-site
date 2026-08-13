@@ -114,8 +114,51 @@ withSubmitGuard(document.getElementById("signin-form"), async (form) => {
 
 let lastUnconfirmedEmail = "";
 
+// Client-side cooldown for the resend/reset flows. Not a security boundary
+// on its own — a scripted attacker bypasses this trivially by calling the
+// Supabase endpoint directly with the public anon key — but it stops the
+// far more common "impatient human hammering the button", and combined
+// with Supabase's own server-side rate limits + Turnstile it meaningfully
+// raises the cost of email-flooding a victim's inbox via this UI.
+const COOLDOWN_MS = 60 * 1000;
+const COOLDOWN_KEYS = {
+  resend: "cathedral_cooldown_resend",
+  forgot: "cathedral_cooldown_forgot"
+};
+
+function cooldownRemainingMs(key) {
+  const until = Number(window.sessionStorage.getItem(key));
+  if (!Number.isFinite(until) || until <= 0) return 0;
+  return Math.max(0, until - Date.now());
+}
+
+function armCooldown(key) {
+  window.sessionStorage.setItem(key, String(Date.now() + COOLDOWN_MS));
+}
+
+function applyCooldownToButton(button, key, labelFn) {
+  if (!button) return;
+  const originalLabel = button.dataset.originalLabel || button.textContent;
+  button.dataset.originalLabel = originalLabel;
+
+  function tick() {
+    const remaining = cooldownRemainingMs(key);
+    if (remaining <= 0) {
+      button.disabled = false;
+      button.textContent = originalLabel;
+      return;
+    }
+    button.disabled = true;
+    button.textContent = labelFn(Math.ceil(remaining / 1000));
+    setTimeout(tick, 500);
+  }
+  tick();
+}
+
 document.getElementById("resend-confirmation-btn").addEventListener("click", async (e) => {
-  e.target.hidden = true;
+  const button = e.currentTarget;
+  if (cooldownRemainingMs(COOLDOWN_KEYS.resend) > 0) return;
+  armCooldown(COOLDOWN_KEYS.resend);
   try {
     await window.CathedralAuth.resendConfirmation(lastUnconfirmedEmail);
   } catch (err) {
@@ -123,6 +166,7 @@ document.getElementById("resend-confirmation-btn").addEventListener("click", asy
     // whether the address exists, so this button always ends the same way.
   }
   setMessage("signin", "If that account needs confirming, a new email is on its way.", false);
+  applyCooldownToButton(button, COOLDOWN_KEYS.resend, (s) => `Resend confirmation email (${s}s)`);
 });
 
 withSubmitGuard(document.getElementById("signup-form"), async (form) => {
@@ -135,8 +179,21 @@ withSubmitGuard(document.getElementById("signup-form"), async (form) => {
   }
 });
 
-withSubmitGuard(document.getElementById("forgot-form"), async (form) => {
+const forgotForm = document.getElementById("forgot-form");
+const forgotButton = forgotForm.querySelector('button[type="submit"]');
+
+withSubmitGuard(forgotForm, async (form) => {
   setMessage("forgot", "", false);
+  if (cooldownRemainingMs(COOLDOWN_KEYS.forgot) > 0) {
+    // Every branch of this handler lands on the same generic message, so
+    // an in-cooldown submit can't be distinguished from a successful one
+    // by the response text — only by the button label countdown, which
+    // is a UX affordance for a real human, not an oracle for a bot.
+    setMessage("forgot", "If that email is registered, a reset link is on its way.", false);
+    applyCooldownToButton(forgotButton, COOLDOWN_KEYS.forgot, (s) => `Send reset link (${s}s)`);
+    return;
+  }
+  armCooldown(COOLDOWN_KEYS.forgot);
   try {
     await window.CathedralAuth.requestPasswordReset(form.get("email"));
   } catch (err) {
@@ -145,7 +202,22 @@ withSubmitGuard(document.getElementById("forgot-form"), async (form) => {
     // the caller so email existence can't be inferred from this flow.
   }
   setMessage("forgot", "If that email is registered, a reset link is on its way.", false);
+  applyCooldownToButton(forgotButton, COOLDOWN_KEYS.forgot, (s) => `Send reset link (${s}s)`);
 });
+
+// Re-arm the visual cooldown after a reload or panel switch, so a user
+// who reset their password 20 seconds ago and refreshed still sees the
+// remaining wait instead of a fresh-looking button.
+if (cooldownRemainingMs(COOLDOWN_KEYS.forgot) > 0) {
+  applyCooldownToButton(forgotButton, COOLDOWN_KEYS.forgot, (s) => `Send reset link (${s}s)`);
+}
+if (cooldownRemainingMs(COOLDOWN_KEYS.resend) > 0) {
+  applyCooldownToButton(
+    document.getElementById("resend-confirmation-btn"),
+    COOLDOWN_KEYS.resend,
+    (s) => `Resend confirmation email (${s}s)`
+  );
+}
 
 withSubmitGuard(document.getElementById("update-password-form"), async (form) => {
   setMessage("update-password", "", false);
