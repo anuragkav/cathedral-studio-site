@@ -5,11 +5,14 @@
   "description": "Dev-only test tooling for the static site. The site itself ships with no build step and no runtime dependencies.",
   "scripts": {
     "test:unit": "node --test test/unit",
+    "test:integration": "node --test test/integration",
     "test:e2e": "playwright test",
-    "test": "npm run test:unit && npm run test:e2e"
+    "test": "npm run test:unit && npm run test:integration && npm run test:e2e"
   },
   "devDependencies": {
     "@playwright/test": "1.45.3",
-    "http-server": "^14.1.1"
+    "embedded-postgres": "^18.4.0-beta.17",
+    "http-server": "^14.1.1",
+    "pg": "^8.23.0"
   }
 }
