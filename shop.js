@@ -18,6 +18,25 @@
     badge.hidden = count === 0;
   }
 
+  // store.save() can fail (browser storage quota) on a very large or
+  // tampered cart; a failed add must not claim "Added" with no explanation.
+  function showStorageErrorToast() {
+    let toast = document.getElementById("storage-error-toast");
+    if (!toast) {
+      toast = document.createElement("p");
+      toast.id = "storage-error-toast";
+      toast.setAttribute("role", "alert");
+      toast.className = "storage-error-toast";
+      document.body.appendChild(toast);
+    }
+    toast.textContent = "Your cart couldn't be updated — your browser's storage for this site is full.";
+    toast.hidden = false;
+    clearTimeout(showStorageErrorToast.hideTimer);
+    showStorageErrorToast.hideTimer = setTimeout(function () {
+      toast.hidden = true;
+    }, 4000);
+  }
+
   function onAddToCartClick(event) {
     const button = event.target.closest("[data-action='add-to-cart']");
     if (!button) return;
@@ -35,7 +54,11 @@
       cat: product.cat,
       fabric: product.fabric
     }, 1);
-    store.save(next);
+    const saved = store.save(next);
+    if (!saved) {
+      showStorageErrorToast();
+      return;
+    }
     updateCartBadge();
 
     const original = button.textContent;
