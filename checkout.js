@@ -1,11 +1,23 @@
-// Cathedral Studio — cart rendering + checkout form wiring.
-// This is a design preview only: submitting the form never contacts a
-// payment network or a server. See the disclosure copy in checkout.html.
+// Cathedral Studio — cart rendering + Stripe Checkout hand-off.
+//
+// The button on this page does NOT charge anything. It POSTs the cart's
+// { id, qty } lines plus a per-tab token to the create-checkout-session
+// Supabase Edge Function (which owns the trusted price catalog), then
+// navigates the browser to the returned Stripe Checkout URL. Card, email,
+// and shipping address are collected by Stripe, never by this site.
 
 (function () {
   const Cart = window.CathedralCart;
   const Validation = window.CathedralValidation;
   const store = Cart.createStore();
+
+  // Per-tab nonce written to sessionStorage before initiating checkout.
+  // Doubles as (a) the Stripe idempotency key so retries re-attach to the
+  // same Session, and (b) a return-URL validator so an attacker-crafted
+  // "checkout.html?checkout=success" link cannot unilaterally clear the
+  // victim's cart or paint a fake "payment received" page. Declared up
+  // top because cart-mutation handlers invalidate it on any change.
+  const CHECKOUT_TOKEN_KEY = "cathedral_checkout_token_v1";
 
   const cartEmptyEl = document.getElementById("cart-empty");
   const cartContentEl = document.getElementById("cart-content");
@@ -13,12 +25,36 @@
   const summarySubtotalEl = document.getElementById("summary-subtotal");
   const summaryShippingEl = document.getElementById("summary-shipping");
   const summaryTotalEl = document.getElementById("summary-total");
-  const form = document.getElementById("checkout-form");
+  const submitBtn = document.getElementById("checkout-submit");
   const confirmationEl = document.getElementById("checkout-confirmation");
+  const cancelledEl = document.getElementById("checkout-cancelled");
+  const checkoutErrorEl = document.getElementById("checkout-error");
   const storageErrorEl = document.getElementById("storage-error");
 
   function showStorageErrorIfSaveFailed(saved) {
     if (storageErrorEl) storageErrorEl.hidden = saved;
+  }
+
+  function getCheckoutEndpoint() {
+    const cfg = window.CATHEDRAL_CONFIG || {};
+    if (typeof cfg.CHECKOUT_ENDPOINT === "string" && cfg.CHECKOUT_ENDPOINT.length > 0) {
+      return cfg.CHECKOUT_ENDPOINT;
+    }
+    if (typeof cfg.SUPABASE_URL === "string" && /^https:\/\/[^/]+\.supabase\.co$/.test(cfg.SUPABASE_URL)) {
+      return cfg.SUPABASE_URL.replace(/\/+$/, "") + "/functions/v1/create-checkout-session";
+    }
+    return null;
+  }
+
+  function generateCheckoutToken() {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+    // Fallback for very old browsers — not cryptographic, but for a
+    // per-tab idempotency + return-validator nonce it's enough (an
+    // attacker would need to guess THIS tab's token).
+    const rand = () => Math.random().toString(16).slice(2).padStart(13, "0");
+    return rand() + rand() + rand();
   }
 
   function renderLine(line) {
@@ -92,6 +128,16 @@
     summaryTotalEl.textContent = Validation.formatCurrency(subtotal + shipping);
   }
 
+  function invalidateCheckoutTokenOnCartMutation() {
+    // If the shopper mutates the cart AFTER a Stripe redirect they then
+    // abandoned (Back button instead of Cancel), the stored token still
+    // points at a Stripe Session built from the OLD line items. Reusing
+    // it as an idempotency key with a different body makes Stripe return
+    // the stale session (or reject the call). Clear it here so the next
+    // click mints a fresh token and a fresh Session reflecting the new cart.
+    try { window.sessionStorage.removeItem(CHECKOUT_TOKEN_KEY); } catch (e) { /* no-op */ }
+  }
+
   function onCartLinesClick(event) {
     const button = event.target.closest("[data-action]");
     if (!button) return;
@@ -110,6 +156,7 @@
     } else {
       return;
     }
+    invalidateCheckoutTokenOnCartMutation();
     showStorageErrorIfSaveFailed(saved);
     renderCart();
   }
@@ -123,12 +170,12 @@
     // Typing is for setting a quantity, not for removing a line — a blank,
     // non-numeric, or sub-1 value (e.g. from select-all-and-delete) resets
     // the field back to its last saved quantity instead of clamping to 0
-    // and silently deleting the line. Removal stays an explicit action:
-    // the Remove button, or repeatedly clicking decrease down from 1.
+    // and silently deleting the line. Removal stays an explicit action.
     if (!Number.isFinite(typed) || typed < 1) {
       renderCart();
       return;
     }
+    invalidateCheckoutTokenOnCartMutation();
     showStorageErrorIfSaveFailed(store.save(Cart.updateQty(cart, id, typed)));
     renderCart();
   }
@@ -136,111 +183,98 @@
   cartLinesEl.addEventListener("click", onCartLinesClick);
   cartLinesEl.addEventListener("change", onCartLinesChange);
 
-  const FIELD_VALIDATORS = {
-    email: {
-      check: function (values) { return Validation.validateEmail(values.email); },
-      message: "Enter a valid email address."
-    },
-    "full-name": {
-      check: function (values) { return Validation.validateRequired(values["full-name"]); },
-      message: "Enter your full name."
-    },
-    address1: {
-      check: function (values) { return Validation.validateRequired(values.address1); },
-      message: "Enter a street address."
-    },
-    city: {
-      check: function (values) { return Validation.validateRequired(values.city); },
-      message: "Enter a city."
-    },
-    state: {
-      check: function (values) { return Validation.validateRequired(values.state); },
-      message: "Enter a state or province."
-    },
-    zip: {
-      check: function (values) { return Validation.validateZip(values.zip, values.country); },
-      message: "Enter a valid postal code."
-    },
-    "card-number": {
-      check: function (values) { return Validation.luhnCheck(values["card-number"]); },
-      message: "Enter a valid card number."
-    },
-    "card-expiry": {
-      check: function (values) {
-        const match = /^(\d{1,2})\s*\/\s*(\d{2}|\d{4})$/.exec((values["card-expiry"] || "").trim());
-        if (!match) return false;
-        return Validation.validateExpiry(match[1], match[2]);
-      },
-      message: "Enter a valid, unexpired expiry (MM/YY)."
-    },
-    "card-cvc": {
-      check: function (values) { return /^\d{3,4}$/.test((values["card-cvc"] || "").trim()); },
-      message: "Enter a valid CVC."
-    }
-  };
+  function showCheckoutError(message) {
+    if (!checkoutErrorEl) return;
+    checkoutErrorEl.textContent = message;
+    checkoutErrorEl.hidden = false;
+  }
 
-  function readFormValues() {
+  function clearCheckoutError() {
+    if (!checkoutErrorEl) return;
+    checkoutErrorEl.textContent = "";
+    checkoutErrorEl.hidden = true;
+  }
+
+  function toStripePayload(cart, token) {
+    // Only id + qty + token cross the wire. The server-side CATALOG owns
+    // unit price and product name — a tampered localStorage that sends a
+    // $1 price or a rewritten name cannot influence what Stripe charges.
     return {
-      email: form.email.value.trim(),
-      "full-name": form["full-name"].value,
-      address1: form.address1.value,
-      city: form.city.value,
-      state: form.state.value,
-      zip: form.zip.value,
-      country: form.country.value,
-      "card-number": form["card-number"].value,
-      "card-expiry": form["card-expiry"].value,
-      "card-cvc": form["card-cvc"].value
+      items: cart.items.map(function (line) {
+        return { id: line.id, qty: line.qty };
+      }),
+      checkout_token: token
     };
   }
 
-  function setFieldError(fieldId, message) {
-    const errorEl = form.querySelector('[data-error-for="' + fieldId + '"]');
-    const inputEl = document.getElementById(fieldId);
-    if (errorEl) {
-      errorEl.textContent = message || "";
-      errorEl.setAttribute("role", message ? "alert" : "presentation");
+  async function onCheckoutClick() {
+    clearCheckoutError();
+    const cart = store.load();
+    if (cart.items.length === 0) return;
+
+    const endpoint = getCheckoutEndpoint();
+    if (!endpoint) {
+      showCheckoutError("Checkout is not configured yet. Please try again later.");
+      return;
     }
-    if (inputEl) {
-      if (message) {
-        inputEl.setAttribute("aria-invalid", "true");
-        if (errorEl) inputEl.setAttribute("aria-describedby", errorEl.id);
-      } else {
-        inputEl.removeAttribute("aria-invalid");
-        inputEl.removeAttribute("aria-describedby");
+
+    submitBtn.disabled = true;
+    const originalText = submitBtn.textContent;
+    submitBtn.textContent = "Redirecting…";
+
+    // Store the token BEFORE the network call so a retry (double-click,
+    // transient error) reuses the same token and Stripe returns the SAME
+    // session via its idempotency key.
+    let token;
+    try {
+      token = window.sessionStorage.getItem(CHECKOUT_TOKEN_KEY) || generateCheckoutToken();
+      window.sessionStorage.setItem(CHECKOUT_TOKEN_KEY, token);
+    } catch (err) {
+      // sessionStorage disabled/full — fall back to a per-click token so
+      // checkout still works (idempotency + return validation degrade,
+      // but not to anything worse than before).
+      token = generateCheckoutToken();
+    }
+
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // No cookies: the edge function is public and stateless, and
+        // sending credentials would only widen the attack surface on the
+        // shared Supabase domain.
+        credentials: "omit",
+        body: JSON.stringify(toStripePayload(cart, token))
+      });
+      const data = await res.json().catch(function () { return {}; });
+      if (!res.ok || typeof data.url !== "string") {
+        showCheckoutError(
+          (data && typeof data.error === "string" && data.error) ||
+          "We couldn't start checkout. Please try again."
+        );
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalText;
+        return;
       }
+      // Whitelist the redirect target — any URL that isn't a Stripe
+      // Checkout URL is treated as a compromised response and refused,
+      // so a tampered edge function can't turn this button into an
+      // open-redirect / phishing pivot.
+      if (!/^https:\/\/checkout\.stripe\.com\//.test(data.url)) {
+        showCheckoutError("Unexpected checkout URL. Please try again.");
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalText;
+        return;
+      }
+      window.location.href = data.url;
+    } catch (err) {
+      showCheckoutError("Network error. Please check your connection and try again.");
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalText;
     }
   }
 
-  function validateForm() {
-    const values = readFormValues();
-    let isValid = true;
-    Object.keys(FIELD_VALIDATORS).forEach(function (fieldId) {
-      const validator = FIELD_VALIDATORS[fieldId];
-      const ok = validator.check(values);
-      setFieldError(fieldId, ok ? "" : validator.message);
-      if (!ok) isValid = false;
-    });
-    return isValid;
-  }
-
-  function onSubmit(event) {
-    event.preventDefault();
-    if (store.load().items.length === 0) return;
-    if (!validateForm()) return;
-
-    store.clear();
-    cartContentEl.hidden = true;
-    cartEmptyEl.hidden = true;
-    confirmationEl.hidden = false;
-    renderCartBadgeIfPresent();
-
-    const confirmationHeading = confirmationEl.querySelector("h1");
-    if (confirmationHeading) {
-      confirmationHeading.setAttribute("tabindex", "-1");
-      confirmationHeading.focus();
-    }
-  }
+  submitBtn.addEventListener("click", onCheckoutClick);
 
   function renderCartBadgeIfPresent() {
     const badge = document.getElementById("cart-badge");
@@ -249,7 +283,65 @@
     badge.textContent = "";
   }
 
-  form.addEventListener("submit", onSubmit);
+  function readStoredCheckoutToken() {
+    try {
+      return window.sessionStorage.getItem(CHECKOUT_TOKEN_KEY);
+    } catch (err) {
+      return null;
+    }
+  }
 
-  renderCart();
+  function clearStoredCheckoutToken() {
+    try {
+      window.sessionStorage.removeItem(CHECKOUT_TOKEN_KEY);
+    } catch (err) { /* nothing we can do */ }
+  }
+
+  function handleReturnFromStripe() {
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get("checkout");
+    if (status !== "success" && status !== "cancelled") return false;
+
+    // A raw ?checkout=success link sent by an attacker would otherwise
+    // clear the victim's cart or paint a misleading "payment received"
+    // page. We only trust the return when the URL token matches the one
+    // THIS tab stashed in sessionStorage before initiating the redirect.
+    const urlToken = params.get("token");
+    const storedToken = readStoredCheckoutToken();
+    if (!urlToken || !storedToken || urlToken !== storedToken) {
+      return false;
+    }
+    clearStoredCheckoutToken();
+
+    if (status === "success") {
+      // Stripe only redirects to success_url after a successful charge;
+      // token match confirms this browser initiated the checkout. The
+      // order-of-record and any fulfillment must still be driven from
+      // Stripe webhooks server-side — this branch is UI only.
+      store.clear();
+      cartContentEl.hidden = true;
+      cartEmptyEl.hidden = true;
+      confirmationEl.hidden = false;
+      renderCartBadgeIfPresent();
+      const heading = confirmationEl.querySelector("h1");
+      if (heading) {
+        heading.setAttribute("tabindex", "-1");
+        heading.focus();
+      }
+      return true;
+    }
+    // cancelled — cart remains intact, cancellation panel shown.
+    cartContentEl.hidden = true;
+    cartEmptyEl.hidden = true;
+    cancelledEl.hidden = false;
+    const heading = cancelledEl.querySelector("h1");
+    if (heading) {
+      heading.setAttribute("tabindex", "-1");
+      heading.focus();
+    }
+    return true;
+  }
+
+  const handled = handleReturnFromStripe();
+  if (!handled) renderCart();
 })();

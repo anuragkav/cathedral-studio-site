@@ -17,8 +17,16 @@
 // secret key there. Leaving this as the placeholder value below disables
 // CAPTCHA entirely — signup/signin/reset still work, just unprotected.
 //
+//
+// CHECKOUT_ENDPOINT is optional. When empty, checkout.js derives it as
+// `${SUPABASE_URL}/functions/v1/create-checkout-session`. Set it
+// explicitly only when pointing at a non-default deployment (a preview
+// branch, a self-hosted function). It must resolve to a same-project
+// Supabase Function that owns the Stripe secret key — never a raw Stripe
+// URL.
 window.CATHEDRAL_CONFIG = {
   SUPABASE_URL: "https://YOUR-PROJECT-REF.supabase.co",
   SUPABASE_ANON_KEY: "YOUR-ANON-PUBLIC-KEY",
-  TURNSTILE_SITE_KEY: "YOUR-TURNSTILE-SITE-KEY"
+  TURNSTILE_SITE_KEY: "YOUR-TURNSTILE-SITE-KEY",
+  CHECKOUT_ENDPOINT: ""
 };

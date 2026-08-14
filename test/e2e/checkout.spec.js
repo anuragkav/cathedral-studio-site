@@ -1,6 +1,7 @@
 const { test, expect } = require("@playwright/test");
 
 const STORAGE_KEY = "cathedral_cart_v1";
+const STRIPE_TEST_URL = "https://checkout.stripe.com/pay/cs_test_abc123";
 
 // addInitScript persists for the page's whole lifetime and re-runs on
 // every navigation, including page.reload() — so a plain "always seed"
@@ -21,31 +22,29 @@ function seedCart(items) {
   };
 }
 
-const VALID_SHIPPING = {
-  email: "buyer@example.com",
-  "full-name": "Jamie Rivera",
-  address1: "1 Cathedral Way",
-  city: "Providence",
-  state: "RI",
-  zip: "02903"
-};
+// Must match the CSP `connect-src ... https://*.supabase.co` allowlist on
+// checkout.html — a non-supabase.co hostname would trip CSP and the fetch
+// would never reach Playwright's route handler.
+const FAKE_ENDPOINT = "https://fake-project.supabase.co/functions/v1/create-checkout-session";
 
-const VALID_CARD = {
-  "card-number": "4111 1111 1111 1111",
-  "card-expiry": "12/30",
-  "card-cvc": "123"
-};
-
-async function fillValidCheckoutForm(page) {
-  await page.fill("#email", VALID_SHIPPING.email);
-  await page.fill("#full-name", VALID_SHIPPING["full-name"]);
-  await page.fill("#address1", VALID_SHIPPING.address1);
-  await page.fill("#city", VALID_SHIPPING.city);
-  await page.fill("#state", VALID_SHIPPING.state);
-  await page.fill("#zip", VALID_SHIPPING.zip);
-  await page.fill("#card-number", VALID_CARD["card-number"]);
-  await page.fill("#card-expiry", VALID_CARD["card-expiry"]);
-  await page.fill("#card-cvc", VALID_CARD["card-cvc"]);
+async function stubCheckoutEndpoint(page, handler) {
+  await page.addInitScript((endpoint) => {
+    // addInitScript runs BEFORE the page's own <script> tags — including
+    // config.js, whose top-level `window.CATHEDRAL_CONFIG = {...}` would
+    // otherwise overwrite anything set here. Install a getter that always
+    // merges CHECKOUT_ENDPOINT on top of whatever config.js later assigns.
+    let stored = {};
+    Object.defineProperty(window, "CATHEDRAL_CONFIG", {
+      get() { return Object.assign({}, stored, { CHECKOUT_ENDPOINT: endpoint }); },
+      set(v) { stored = v || {}; },
+      configurable: true
+    });
+  }, FAKE_ENDPOINT);
+  await page.route(FAKE_ENDPOINT, async (route) => {
+    const request = route.request();
+    const payload = request.postDataJSON ? request.postDataJSON() : JSON.parse(request.postData() || "{}");
+    await handler(route, payload);
+  });
 }
 
 test("checkout page shows the empty state when the cart has no items", async ({ page }) => {
@@ -109,89 +108,175 @@ test("clicking Remove drops the line entirely", async ({ page }) => {
   await expect(page.locator("#summary-subtotal")).toHaveText("$1,450.00");
 });
 
-test("removing the only line falls back to the empty state and clears the summary cart", async ({ page }) => {
+test("removing the only line falls back to the empty state", async ({ page }) => {
   await (await seedCart([{ id: "men-01", name: "Nave Overcoat", price: 1450, qty: 1 }]))(page);
   await page.goto("/checkout.html");
   await page.click('[data-action="remove"][data-id="men-01"]');
   await expect(page.locator("#cart-empty")).toBeVisible();
 });
 
-test("submitting with empty required fields shows field errors and does not show the confirmation", async ({ page }) => {
-  await (await seedCart([{ id: "men-01", name: "Nave Overcoat", price: 1450, qty: 1 }]))(page);
+test("proceed-to-payment sends only id, qty, and a checkout_token to the endpoint, never the price", async ({ page }) => {
+  await (await seedCart([
+    { id: "men-01", name: "Nave Overcoat", price: 1450, qty: 2, cat: "Outerwear", fabric: "Doubleface wool" }
+  ]))(page);
+  let capturedPayload = null;
+  await stubCheckoutEndpoint(page, async (route, payload) => {
+    capturedPayload = payload;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ url: STRIPE_TEST_URL })
+    });
+  });
   await page.goto("/checkout.html");
+  await page.route(STRIPE_TEST_URL, (route) => route.fulfill({ status: 200, body: "stripe stub" }));
   await page.click("#checkout-submit");
-  await expect(page.locator('[data-error-for="email"]')).not.toHaveText("");
-  await expect(page.locator('[data-error-for="full-name"]')).not.toHaveText("");
-  await expect(page.locator('[data-error-for="card-number"]')).not.toHaveText("");
-  await expect(page.locator("#checkout-confirmation")).toBeHidden();
+  await page.waitForURL(STRIPE_TEST_URL);
+  expect(capturedPayload.items).toEqual([{ id: "men-01", qty: 2 }]);
+  expect(typeof capturedPayload.checkout_token).toBe("string");
+  expect(capturedPayload.checkout_token.length).toBeGreaterThanOrEqual(16);
+  expect(capturedPayload.items[0]).not.toHaveProperty("price");
+  expect(capturedPayload.items[0]).not.toHaveProperty("name");
+  expect(capturedPayload.items[0]).not.toHaveProperty("fabric");
 });
 
-test("an invalid email is flagged with a specific error", async ({ page }) => {
+test("a retried proceed-to-payment reuses the same checkout_token for idempotency", async ({ page }) => {
   await (await seedCart([{ id: "men-01", name: "Nave Overcoat", price: 1450, qty: 1 }]))(page);
+  const tokens = [];
+  await stubCheckoutEndpoint(page, async (route, payload) => {
+    tokens.push(payload.checkout_token);
+    if (tokens.length === 1) {
+      await route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ error: "boom" }) });
+    } else {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ url: STRIPE_TEST_URL }) });
+    }
+  });
+  await page.route(STRIPE_TEST_URL, (route) => route.fulfill({ status: 200, body: "stripe stub" }));
   await page.goto("/checkout.html");
-  await fillValidCheckoutForm(page);
-  await page.fill("#email", "not-an-email");
   await page.click("#checkout-submit");
-  await expect(page.locator('[data-error-for="email"]')).toHaveText(/valid email/i);
-  await expect(page.locator("#checkout-confirmation")).toBeHidden();
+  await expect(page.locator("#checkout-error")).toBeVisible();
+  await expect(page.locator("#checkout-submit")).toBeEnabled();
+  await page.click("#checkout-submit");
+  await page.waitForURL(STRIPE_TEST_URL);
+  expect(tokens).toHaveLength(2);
+  expect(tokens[0]).toBe(tokens[1]);
 });
 
-test("a Luhn-invalid card number is rejected", async ({ page }) => {
+test("proceed-to-payment redirects the browser to the Stripe URL returned by the endpoint", async ({ page }) => {
   await (await seedCart([{ id: "men-01", name: "Nave Overcoat", price: 1450, qty: 1 }]))(page);
+  await stubCheckoutEndpoint(page, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ url: STRIPE_TEST_URL })
+    });
+  });
+  await page.route(STRIPE_TEST_URL, (route) => route.fulfill({ status: 200, body: "stripe stub" }));
   await page.goto("/checkout.html");
-  await fillValidCheckoutForm(page);
-  await page.fill("#card-number", "4111 1111 1111 1112");
   await page.click("#checkout-submit");
-  await expect(page.locator('[data-error-for="card-number"]')).toHaveText(/valid card/i);
-  await expect(page.locator("#checkout-confirmation")).toBeHidden();
+  await page.waitForURL(STRIPE_TEST_URL);
+  expect(page.url()).toBe(STRIPE_TEST_URL);
 });
 
-test("an expired card is rejected", async ({ page }) => {
+test("a non-stripe URL returned by the endpoint is refused instead of redirecting", async ({ page }) => {
   await (await seedCart([{ id: "men-01", name: "Nave Overcoat", price: 1450, qty: 1 }]))(page);
+  await stubCheckoutEndpoint(page, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ url: "https://evil.example.com/phish" })
+    });
+  });
   await page.goto("/checkout.html");
-  await fillValidCheckoutForm(page);
-  await page.fill("#card-expiry", "01/20");
   await page.click("#checkout-submit");
-  await expect(page.locator('[data-error-for="card-expiry"]')).toHaveText(/expiry/i);
-  await expect(page.locator("#checkout-confirmation")).toBeHidden();
+  await expect(page.locator("#checkout-error")).toBeVisible();
+  await expect(page.locator("#checkout-error")).toContainText(/checkout url/i);
+  expect(page.url()).toContain("/checkout.html");
 });
 
-test("an invalid US zip is rejected", async ({ page }) => {
+test("an endpoint error surfaces the error message and re-enables the button", async ({ page }) => {
   await (await seedCart([{ id: "men-01", name: "Nave Overcoat", price: 1450, qty: 1 }]))(page);
+  await stubCheckoutEndpoint(page, async (route) => {
+    await route.fulfill({
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Cart is empty." })
+    });
+  });
   await page.goto("/checkout.html");
-  await fillValidCheckoutForm(page);
-  await page.fill("#zip", "abc");
   await page.click("#checkout-submit");
-  await expect(page.locator('[data-error-for="zip"]')).not.toHaveText("");
-  await expect(page.locator("#checkout-confirmation")).toBeHidden();
+  await expect(page.locator("#checkout-error")).toContainText("Cart is empty.");
+  await expect(page.locator("#checkout-submit")).toBeEnabled();
 });
 
-test("a fully valid submission shows the preview confirmation and never a real charge claim", async ({ page }) => {
+test("a network failure surfaces a network error and re-enables the button", async ({ page }) => {
   await (await seedCart([{ id: "men-01", name: "Nave Overcoat", price: 1450, qty: 1 }]))(page);
+  await stubCheckoutEndpoint(page, async (route) => {
+    await route.abort("failed");
+  });
   await page.goto("/checkout.html");
-  await fillValidCheckoutForm(page);
   await page.click("#checkout-submit");
+  await expect(page.locator("#checkout-error")).toContainText(/network error/i);
+  await expect(page.locator("#checkout-submit")).toBeEnabled();
+});
+
+test("a fake ?checkout=success link WITHOUT a matching token does NOT clear the cart or show confirmation", async ({ page }) => {
+  await (await seedCart([{ id: "men-01", name: "Nave Overcoat", price: 1450, qty: 1 }]))(page);
+  await page.goto("/checkout.html?checkout=success&session_id=cs_test_xyz&token=attacker-crafted-token");
+  await expect(page.locator("#cart-content")).toBeVisible();
+  await expect(page.locator("#checkout-confirmation")).toBeHidden();
+  const storage = await page.evaluate((key) => window.localStorage.getItem(key), STORAGE_KEY);
+  expect(storage).not.toBeNull();
+});
+
+test("a ?checkout=success return WITH the matching token clears the cart and shows confirmation", async ({ page }) => {
+  await (await seedCart([{ id: "men-01", name: "Nave Overcoat", price: 1450, qty: 1 }]))(page);
+  let capturedToken = null;
+  await stubCheckoutEndpoint(page, async (route, payload) => {
+    capturedToken = payload.checkout_token;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ url: STRIPE_TEST_URL }) });
+  });
+  await page.route(STRIPE_TEST_URL, (route) => route.fulfill({ status: 200, body: "stripe stub" }));
+  await page.goto("/checkout.html");
+  await page.click("#checkout-submit");
+  await page.waitForURL(STRIPE_TEST_URL);
+  expect(capturedToken).toBeTruthy();
+  await page.goto(`/checkout.html?checkout=success&session_id=cs_test_xyz&token=${encodeURIComponent(capturedToken)}`);
   await expect(page.locator("#checkout-confirmation")).toBeVisible();
-  await expect(page.locator("#checkout-confirmation")).toContainText(/nothing was charged/i);
   await expect(page.locator("#cart-content")).toBeHidden();
+  const storage = await page.evaluate((key) => window.localStorage.getItem(key), STORAGE_KEY);
+  expect(storage).toBeNull();
+  const remainingToken = await page.evaluate(() => window.sessionStorage.getItem("cathedral_checkout_token_v1"));
+  expect(remainingToken).toBeNull();
 });
 
-test("submitting clears the cart from storage so a reload shows the empty state", async ({ page }) => {
+test("returning with ?checkout=cancelled AND the matching token shows the cancellation panel without clearing the cart", async ({ page }) => {
   await (await seedCart([{ id: "men-01", name: "Nave Overcoat", price: 1450, qty: 1 }]))(page);
+  let capturedToken = null;
+  await stubCheckoutEndpoint(page, async (route, payload) => {
+    capturedToken = payload.checkout_token;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ url: STRIPE_TEST_URL }) });
+  });
+  await page.route(STRIPE_TEST_URL, (route) => route.fulfill({ status: 200, body: "stripe stub" }));
   await page.goto("/checkout.html");
-  await fillValidCheckoutForm(page);
   await page.click("#checkout-submit");
-  await expect(page.locator("#checkout-confirmation")).toBeVisible();
-  await page.reload();
-  await expect(page.locator("#cart-empty")).toBeVisible();
+  await page.waitForURL(STRIPE_TEST_URL);
+  expect(capturedToken).toBeTruthy();
+  await page.goto(`/checkout.html?checkout=cancelled&token=${encodeURIComponent(capturedToken)}`);
+  await expect(page.locator("#checkout-cancelled")).toBeVisible();
+  await expect(page.locator("#cart-content")).toBeHidden();
+  const storage = await page.evaluate((key) => window.localStorage.getItem(key), STORAGE_KEY);
+  expect(storage).not.toBeNull();
+  const parsed = JSON.parse(storage);
+  expect(parsed.items).toHaveLength(1);
 });
 
-test("the disclosure banner is visible and the submit button never claims to charge or place a real order", async ({ page }) => {
+test("the disclosure banner no longer claims payment is a preview", async ({ page }) => {
   await (await seedCart([{ id: "men-01", name: "Nave Overcoat", price: 1450, qty: 1 }]))(page);
   await page.goto("/checkout.html");
-  await expect(page.locator(".checkout-disclosure")).toContainText(/no payment is processed/i);
+  await expect(page.locator(".checkout-disclosure")).toContainText(/stripe/i);
   const submitText = (await page.locator("#checkout-submit").textContent()).toLowerCase();
-  expect(submitText).not.toMatch(/pay now|place order|charge/);
+  expect(submitText).toMatch(/proceed to payment/);
 });
 
 test("adding an item from the collection grid on the front page carries through to checkout", async ({ page }) => {
@@ -282,40 +367,6 @@ test("adding an item already at the per-line quantity cap shows distinct feedbac
   await expect(button).toHaveText(/limit reached/i);
 });
 
-test("submitting with an invalid email sets aria-invalid and associates the error via aria-describedby", async ({ page }) => {
-  await (await seedCart([{ id: "men-01", name: "Nave Overcoat", price: 1450, qty: 1 }]))(page);
-  await page.goto("/checkout.html");
-  await fillValidCheckoutForm(page);
-  await page.fill("#email", "not-an-email");
-  await page.click("#checkout-submit");
-  const emailInput = page.locator("#email");
-  await expect(emailInput).toHaveAttribute("aria-invalid", "true");
-  const describedBy = await emailInput.getAttribute("aria-describedby");
-  expect(describedBy).toBe("error-email");
-  await expect(page.locator("#" + describedBy)).toHaveAttribute("role", "alert");
-});
-
-test("correcting an invalid field clears aria-invalid and aria-describedby", async ({ page }) => {
-  await (await seedCart([{ id: "men-01", name: "Nave Overcoat", price: 1450, qty: 1 }]))(page);
-  await page.goto("/checkout.html");
-  await fillValidCheckoutForm(page);
-  await page.fill("#email", "not-an-email");
-  await page.click("#checkout-submit");
-  await expect(page.locator("#email")).toHaveAttribute("aria-invalid", "true");
-  await page.fill("#email", VALID_SHIPPING.email);
-  await page.click("#checkout-submit");
-  await expect(page.locator("#email")).not.toHaveAttribute("aria-invalid", "true");
-});
-
-test("submitting successfully moves focus to the confirmation heading", async ({ page }) => {
-  await (await seedCart([{ id: "men-01", name: "Nave Overcoat", price: 1450, qty: 1 }]))(page);
-  await page.goto("/checkout.html");
-  await fillValidCheckoutForm(page);
-  await page.click("#checkout-submit");
-  await expect(page.locator("#checkout-confirmation")).toBeVisible();
-  await expect(page.locator("#checkout-confirmation h1")).toBeFocused();
-});
-
 test("each cart line's decrease/increase/remove controls have a distinct, item-specific accessible name", async ({ page }) => {
   await (await seedCart([
     { id: "men-01", name: "Nave Overcoat", price: 1450, qty: 1 },
@@ -330,21 +381,16 @@ test("each cart line's decrease/increase/remove controls have a distinct, item-s
 
 test("a quantity change that exceeds localStorage quota shows a visible error instead of failing silently", async ({ page }) => {
   await page.goto("/checkout.html");
-  // Force the cart key to sit right at the storage quota using a SMALL
-  // number of lines carrying large `name` padding — same quota condition
-  // as a huge cart, but only a handful of DOM nodes to render, so the
-  // test stays fast. Binary-search the padding length that just fits.
   await page.evaluate(() => {
-    const LINES = 5;
-    function cartJSON(padLen) {
+    function cartJSON(n) {
       const items = [];
-      for (let i = 0; i < LINES; i++) {
-        items.push({ id: "pad-" + i, name: "P" + "x".repeat(padLen), price: 10, qty: 1, cat: "Outerwear", fabric: "Wool" });
+      for (let i = 0; i < n; i++) {
+        items.push({ id: "pad-" + i, name: "Padding Item " + i, price: 10, qty: 1, cat: "Outerwear", fabric: "Wool" });
       }
       return JSON.stringify({ items });
     }
     localStorage.clear();
-    let lo = 0, hi = 6 * 1024 * 1024;
+    let lo = 0, hi = 200000;
     while (lo < hi) {
       const mid = Math.floor((lo + hi + 1) / 2);
       try {
@@ -357,7 +403,7 @@ test("a quantity change that exceeds localStorage quota shows a visible error in
     localStorage.setItem("cathedral_cart_v1", cartJSON(lo));
   });
   await page.reload();
-  await expect(page.locator(".cart-line")).toHaveCount(5);
+  await expect(page.locator(".cart-line").first()).toBeVisible();
 
   await page.click('[data-action="increase"]');
   await expect(page.locator("#storage-error")).toBeVisible();

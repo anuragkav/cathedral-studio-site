@@ -5,7 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cathedral Studio — Cart &amp; Checkout</title>
 <meta name="robots" content="noindex">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<!-- BEFORE GOING LIVE: tighten connect-src from https://*.supabase.co to
+     the exact project ref (e.g. https://abcd1234.supabase.co) that matches
+     SUPABASE_URL in config.js. The wildcard lets this page reach any
+     Supabase-hosted project — fine pre-launch, but a needless XSS
+     amplifier once real shoppers are here. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self' https://*.supabase.co; base-uri 'self'; form-action 'self'; object-src 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500&family=Inter:wght@400;500&display=swap" rel="stylesheet">
@@ -27,12 +32,13 @@
 </nav>
 
 <header class="checkout-header">
-  <p class="checkout-eyebrow">Preview Checkout</p>
+  <p class="checkout-eyebrow">Checkout</p>
   <h1>Your Cart</h1>
-  <p class="checkout-disclosure">This is a design preview of checkout. No payment is processed and no card is charged. Submitting reserves nothing — it only previews the flow.</p>
+  <p class="checkout-disclosure">Continuing to payment redirects you to Stripe, which collects your shipping and card details. Cathedral Studio never sees your card number.</p>
 </header>
 
 <p id="storage-error" class="storage-error" role="alert" hidden>Your cart couldn't be saved — your browser's storage for this site is full. Try removing a few items.</p>
+<p id="checkout-error" class="storage-error" role="alert" hidden></p>
 
 <section id="cart-empty" class="cart-empty" hidden>
   <p>Your cart is empty.</p>
@@ -93,104 +99,25 @@
     <p class="shipping-note">Free shipping on orders over $1,000.</p>
   </aside>
 
-  <form id="checkout-form" class="checkout-form" novalidate>
-
-    <fieldset class="checkout-fieldset">
-      <legend>Contact</legend>
-
-      <div class="form-field">
-        <label for="email">Email</label>
-        <input type="email" id="email" name="email" autocomplete="email" required>
-        <span class="field-error" id="error-email" data-error-for="email"></span>
-      </div>
-    </fieldset>
-
-    <fieldset class="checkout-fieldset">
-      <legend>Shipping</legend>
-
-      <div class="form-field">
-        <label for="full-name">Full name</label>
-        <input type="text" id="full-name" name="fullName" autocomplete="name" required>
-        <span class="field-error" id="error-full-name" data-error-for="full-name"></span>
-      </div>
-
-      <div class="form-field">
-        <label for="address1">Address</label>
-        <input type="text" id="address1" name="address1" autocomplete="address-line1" required>
-        <span class="field-error" id="error-address1" data-error-for="address1"></span>
-      </div>
-
-      <div class="form-field">
-        <label for="address2">Address line 2 <span class="field-optional">(optional)</span></label>
-        <input type="text" id="address2" name="address2" autocomplete="address-line2">
-      </div>
-
-      <div class="form-row">
-        <div class="form-field">
-          <label for="city">City</label>
-          <input type="text" id="city" name="city" autocomplete="address-level2" required>
-          <span class="field-error" id="error-city" data-error-for="city"></span>
-        </div>
-
-        <div class="form-field">
-          <label for="state">State / Province</label>
-          <input type="text" id="state" name="state" autocomplete="address-level1" required>
-          <span class="field-error" id="error-state" data-error-for="state"></span>
-        </div>
-
-        <div class="form-field">
-          <label for="zip">ZIP / Postal code</label>
-          <input type="text" id="zip" name="zip" autocomplete="postal-code" required>
-          <span class="field-error" id="error-zip" data-error-for="zip"></span>
-        </div>
-      </div>
-
-      <div class="form-field">
-        <label for="country">Country</label>
-        <select id="country" name="country" autocomplete="country">
-          <option value="US" selected>United States</option>
-          <option value="CA">Canada</option>
-          <option value="UK">United Kingdom</option>
-          <option value="Other">Other</option>
-        </select>
-      </div>
-    </fieldset>
-
-    <fieldset class="checkout-fieldset">
-      <legend>Payment (preview only)</legend>
-      <p class="payment-note">Preview only — no real card is charged and no payment network is contacted.</p>
-
-      <div class="form-field">
-        <label for="card-number">Card number</label>
-        <input type="text" id="card-number" name="cardNumber" inputmode="numeric" autocomplete="cc-number" required>
-        <span class="field-error" id="error-card-number" data-error-for="card-number"></span>
-      </div>
-
-      <div class="form-row">
-        <div class="form-field">
-          <label for="card-expiry">Expiry</label>
-          <input type="text" id="card-expiry" name="cardExpiry" placeholder="MM/YY" inputmode="numeric" autocomplete="cc-exp" required>
-          <span class="field-error" id="error-card-expiry" data-error-for="card-expiry"></span>
-        </div>
-
-        <div class="form-field">
-          <label for="card-cvc">CVC</label>
-          <input type="text" id="card-cvc" name="cardCvc" inputmode="numeric" autocomplete="cc-csc" required>
-          <span class="field-error" id="error-card-cvc" data-error-for="card-cvc"></span>
-        </div>
-      </div>
-    </fieldset>
-
-    <button type="submit" id="checkout-submit">Preview Reservation</button>
-  </form>
+  <div class="checkout-payment">
+    <p class="payment-note">You'll be redirected to Stripe to enter your shipping address and card details. Cathedral Studio never receives your card number.</p>
+    <button type="button" id="checkout-submit">Proceed to Payment</button>
+  </div>
 
 </section>
 
 <section id="checkout-confirmation" class="checkout-confirmation" hidden>
-  <p class="checkout-eyebrow">Preview Checkout</p>
-  <h1>Preview complete.</h1>
-  <p>Nothing was charged and nothing was reserved — this is a design preview of the checkout flow, not a real order. Cathedral Studio is pre-launch and does not yet process payment.</p>
+  <p class="checkout-eyebrow">Order confirmed</p>
+  <h1>Thank you.</h1>
+  <p>Your payment was received. A receipt from Stripe will arrive by email shortly, and Cathedral Studio will follow up with production and shipping updates.</p>
   <a href="index.html#top" class="cta-link">Back to Cathedral Studio</a>
+</section>
+
+<section id="checkout-cancelled" class="checkout-confirmation" hidden>
+  <p class="checkout-eyebrow">Checkout cancelled</p>
+  <h1>No charge was made.</h1>
+  <p>Your cart is still saved. Return to it whenever you're ready.</p>
+  <a href="checkout.html" class="cta-link">Back to your cart</a>
 </section>
 
 <footer class="footer">
@@ -202,10 +129,10 @@
       <a href="index.html#waitlist">Waitlist</a>
     </div>
   </div>
-  <p class="disclosure">This checkout is a design preview. No payment is collected, no card is charged, and no order is placed or reserved by submitting this form.</p>
   <p class="copyright">&copy; Cathedral Studio. Made to order, not to forecast.</p>
 </footer>
 
+<script src="config.js"></script>
 <script src="products.js"></script>
 <script src="cart.js"></script>
 <script src="validation.js"></script>
