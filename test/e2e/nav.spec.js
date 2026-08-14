@@ -101,6 +101,23 @@ test("keyboard activation: a focused toggle responds to Enter", async ({ page })
   await expect(page.locator(".nav")).not.toHaveClass(/nav-open/);
 });
 
+test("Tab from the wordmark reaches the toggle next (native button stays in tab order)", async ({ page }) => {
+  await page.setViewportSize(MOBILE_VIEWPORT);
+  await page.goto("/index.html");
+  await page.locator(".nav-mark").focus();
+
+  await page.keyboard.press("Tab");
+
+  await expect(page.locator(".nav-toggle")).toBeFocused();
+});
+
+test("waitlist email input has an accessible label, not just a placeholder", async ({ page }) => {
+  await page.goto("/index.html");
+
+  await expect(page.locator('label[for="email"]')).toHaveText("Email");
+  await expect(page.locator("#email")).toHaveAccessibleName("Email");
+});
+
 for (const url of ["/checkout.html", "/account.html"]) {
   test(`hamburger toggle works on ${url} too`, async ({ page }) => {
     await page.setViewportSize(MOBILE_VIEWPORT);

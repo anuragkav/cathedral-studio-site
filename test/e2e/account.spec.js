@@ -333,3 +333,42 @@ test("submit button is disabled while a request is in flight, preventing duplica
   await button.click();
   await expect(button).toBeDisabled();
 });
+
+test("with a placeholder (unconfigured) config, signing in shows a clear setup message instead of a raw error", async ({ page }) => {
+  // Every other test in this file overrides config.js with fake-but-valid
+  // values via the shared beforeEach so the mocked auth flow can run at
+  // all. That means auth.js's assertConfigured() gate — the thing that's
+  // supposed to protect a real, not-yet-configured deploy from throwing a
+  // raw network error at users — has never been exercised by anything in
+  // this suite. This test deliberately restores the real placeholder
+  // shape config.js ships with, to prove the gate itself works.
+  await page.route("**/config.js", (route) =>
+    route.fulfill({
+      contentType: "application/javascript",
+      body: `window.CATHEDRAL_CONFIG = { SUPABASE_URL: "https://YOUR-PROJECT-REF.supabase.co", SUPABASE_ANON_KEY: "YOUR-ANON-PUBLIC-KEY" };`
+    })
+  );
+  await page.goto("/account.html");
+  await page.fill("#signin-email", "someone@example.com");
+  await page.fill("#signin-password", "whatever-password-1");
+  await page.click('#signin-form button[type="submit"]');
+  await expect(page.locator('.account-msg[data-for="signin"]')).toHaveText(/aren't set up yet/i);
+});
+
+test("a 5xx failure from resetPasswordForEmail shows a distinct 'something went wrong' message, not the generic sent-copy", async ({ page }) => {
+  // mockSupabase.js's resetPasswordForEmail always resolves with
+  // error: null, so auth.js's `error.status >= 500` branch — the one
+  // real-world case where the UI is supposed to show a different message
+  // than "a reset link is on its way" — has never been reached by any
+  // test. Overriding the mock's implementation for this one test proves
+  // that branch actually does what it claims.
+  await page.goto("/account.html");
+  await page.evaluate(() => {
+    const client = window.supabase.createClient();
+    client.auth.resetPasswordForEmail = async () => ({ error: { status: 500, message: "internal error" } });
+  });
+  await page.click('[data-panel="forgot"]');
+  await page.fill("#forgot-email", "someone@example.com");
+  await page.click('#forgot-form button[type="submit"]');
+  await expect(page.locator('.account-msg[data-for="forgot"]')).toHaveText(/something went wrong/i);
+});

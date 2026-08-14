@@ -196,12 +196,16 @@ withSubmitGuard(forgotForm, async (form) => {
   armCooldown(COOLDOWN_KEYS.forgot);
   try {
     await window.CathedralAuth.requestPasswordReset(form.get("email"));
+    setMessage("forgot", "If that email is registered, a reset link is on its way.", false);
   } catch (err) {
-    // Even on error, fall through to the same generic message below —
-    // only a genuine server failure throws, and it looks identical to
-    // the caller so email existence can't be inferred from this flow.
+    // requestPasswordReset only ever throws for a genuine server failure
+    // (a 5xx) — it never throws to indicate "no such account", so
+    // surfacing this specific error can't be used to enumerate accounts;
+    // it would fire identically whether or not the email is registered.
+    // Swallowing it here would instead tell a real user an email is on
+    // its way when the request never actually reached Supabase.
+    setMessage("forgot", err.message, true);
   }
-  setMessage("forgot", "If that email is registered, a reset link is on its way.", false);
   applyCooldownToButton(forgotButton, COOLDOWN_KEYS.forgot, (s) => `Send reset link (${s}s)`);
 });
 
