@@ -8,6 +8,18 @@
   padding: 4rem 1.5rem;
 }
 
+/* Below this height, 78vh no longer bounds .account-main (the panel's own
+   content is taller), so the sticky nav plus a still-78vh-seeking main can
+   exceed the whole viewport (landscape phones, split-screen/multi-window).
+   Drop the vh target and shrink the padding instead of fighting a height
+   the content already exceeds. */
+@media (max-height: 480px) {
+  .account-main {
+    min-height: auto;
+    padding: 2rem 1.5rem;
+  }
+}
+
 .account-panel {
   width: 100%;
   max-width: 27rem;

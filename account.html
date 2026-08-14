@@ -8,7 +8,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://cdn.jsdelivr.net https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src 'self' https://*.supabase.co https://challenges.cloudflare.com; base-uri 'self'; form-action 'self'; object-src 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500&family=Inter:wght@400;500&display=optional" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="account.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
@@ -21,14 +21,16 @@
 <body>
 
 <nav class="nav">
-  <a href="index.html#top" class="nav-mark">CATHEDRAL STUDIO</a>
-  <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="nav-links" aria-label="Menu">
-    <span></span><span></span><span></span>
-  </button>
-  <div id="nav-links" class="nav-links">
-    <a href="index.html#men">Men</a>
-    <a href="index.html#women">Women</a>
-    <a href="account.html">Account</a>
+  <div class="nav-inner">
+    <a href="index.html#top" class="nav-mark">CATHEDRAL STUDIO</a>
+    <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="nav-links" aria-label="Menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div id="nav-links" class="nav-links">
+      <a href="index.html#men">Men</a>
+      <a href="index.html#women">Women</a>
+      <a href="account.html">Account</a>
+    </div>
   </div>
 </nav>
 

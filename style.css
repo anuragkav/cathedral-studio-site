@@ -63,14 +63,22 @@ a {
   position: sticky;
   top: 0;
   z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1.25rem 3rem;
   background: rgba(244, 241, 236, 0.92);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   border-bottom: 1px solid var(--line);
+}
+
+/* The bar itself (.nav) stays full-bleed so its background/blur span the
+   whole viewport; .nav-inner is the centered content column — same
+   full-bleed-band-with-centered-content pattern as .footer/.footer-top. */
+.nav-inner {
+  max-width: 96rem;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 3rem;
 }
 
 .nav-mark {
@@ -152,7 +160,7 @@ a {
    collapsed into a hamburger — true progressive enhancement instead of
    a dead button with unreachable links behind it. */
 @media (max-width: 860px) {
-  .nav {
+  .nav-inner {
     flex-wrap: wrap;
     padding: 1rem 1.25rem;
   }
@@ -205,6 +213,22 @@ a {
   display: flex;
   align-items: flex-end;
   overflow: hidden;
+  break-inside: avoid;
+}
+
+/* Below this height, 92vh no longer bounds the hero (its own content —
+   padding, two-line heading, CTA — is taller), so the sticky nav plus an
+   still-92vh-seeking hero can exceed the whole viewport (e.g. landscape
+   phones, split-screen/multi-window). Drop the vh target and shrink the
+   padding instead of fighting a height the content already exceeds. */
+@media (max-height: 480px) {
+  .hero {
+    min-height: auto;
+  }
+
+  .hero-copy {
+    padding: 1.5rem 1.5rem 2rem;
+  }
 }
 
 .hero-image {
@@ -273,6 +297,8 @@ a {
 /* ---------- category tiles ---------- */
 
 .tiles {
+  max-width: 96rem;
+  margin: 0 auto;
   display: grid;
   grid-template-columns: repeat(2, 1fr);
 }
@@ -316,6 +342,7 @@ a {
 }
 
 .story-block {
+  direction: ltr;
   display: grid;
   grid-template-columns: 1.1fr 1fr;
   align-items: center;
@@ -423,18 +450,29 @@ a {
   max-width: 88rem;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* minmax(0, 1fr), not bare 1fr: an unbreakable long word in a card
+     (name/fabric) would otherwise set each track's automatic minimum to
+     its content's width, widening the whole grid past the viewport
+     instead of letting the card's own text wrap/overflow contain it. */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 2.5rem 1.75rem;
 }
 
+.grid-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: var(--muted);
+  padding: 3rem 0;
+}
+
 @media (max-width: 1100px) {
-  .grid { grid-template-columns: repeat(3, 1fr); }
+  .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 780px) {
-  .grid { grid-template-columns: repeat(2, 1fr); }
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 480px) {
-  .grid { grid-template-columns: 1fr; }
+  .grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* .waitlist-form input has a 280px min-width for the two-up desktop
@@ -495,6 +533,10 @@ a {
   top: 0.85rem;
   right: 0.95rem;
   z-index: 2;
+  max-width: 70%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 0.62rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;

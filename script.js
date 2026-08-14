@@ -31,6 +31,10 @@ function renderCard(item) {
 function renderGrid(targetId, items) {
   const el = document.getElementById(targetId);
   if (!el) return;
+  if (!items.length) {
+    el.innerHTML = '<p class="grid-empty">Nothing in this collection yet — check back soon.</p>';
+    return;
+  }
   el.innerHTML = items.map(renderCard).join("");
 }
 
