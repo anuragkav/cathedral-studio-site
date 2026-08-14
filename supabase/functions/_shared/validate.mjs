@@ -119,3 +119,68 @@ export function normalizeBody(input, opts) {
   const lines = Array.from(byId.entries()).map(([id, qty]) => ({ id, qty }));
   return { ok: true, lines, token };
 }
+
+// Stripe caps each metadata VALUE at 500 characters and each Session at 50
+// metadata KEYS. Order lines are encoded as "id:qty" pairs joined by "," —
+// compact enough that even a full 28-line cart fits in one key today, but
+// chunked across numbered keys (catalog_lines_0, catalog_lines_1, ...) so
+// this doesn't silently break if the catalog grows ids longer than the
+// current men-NN/women-NN pattern. The webhook decodes with
+// decodeOrderLines() — same module, so encode/decode can never drift.
+const METADATA_VALUE_LIMIT = 500;
+const METADATA_KEY_PREFIX = "catalog_lines_";
+
+export function encodeOrderLines(lines) {
+  const pairs = lines.map((l) => `${l.id}:${l.qty}`);
+  const chunks = [];
+  let current = "";
+  for (const pair of pairs) {
+    const candidate = current ? `${current},${pair}` : pair;
+    if (candidate.length > METADATA_VALUE_LIMIT) {
+      if (current) chunks.push(current);
+      current = pair;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) chunks.push(current);
+
+  const metadata = {};
+  chunks.forEach((chunk, i) => {
+    metadata[`${METADATA_KEY_PREFIX}${i}`] = chunk;
+  });
+  return metadata;
+}
+
+// Decodes metadata produced by encodeOrderLines back into [{id, qty}, ...].
+// Ignores unknown/malformed entries rather than throwing — the webhook
+// handler is processing Stripe's already-charged event at this point;
+// a single malformed line should not crash order recording for the
+// entire (already-paid-for) session. Returns [] if no catalog_lines_*
+// keys are present at all (e.g. an old session created before this
+// metadata existed).
+export function decodeOrderLines(metadata) {
+  if (!isPlainObject(metadata)) return [];
+  const keys = Object.keys(metadata)
+    .filter((k) => k.startsWith(METADATA_KEY_PREFIX))
+    .sort((a, b) => {
+      const an = Number(a.slice(METADATA_KEY_PREFIX.length));
+      const bn = Number(b.slice(METADATA_KEY_PREFIX.length));
+      return an - bn;
+    });
+
+  const lines = [];
+  for (const key of keys) {
+    const value = metadata[key];
+    if (typeof value !== "string") continue;
+    for (const pair of value.split(",")) {
+      const idx = pair.lastIndexOf(":");
+      if (idx <= 0) continue;
+      const id = pair.slice(0, idx);
+      const qty = Number(pair.slice(idx + 1));
+      if (!id || !Number.isFinite(qty) || qty < 1) continue;
+      lines.push({ id, qty: Math.trunc(qty) });
+    }
+  }
+  return lines;
+}

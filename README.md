@@ -49,40 +49,81 @@ sees a Stripe secret key.
    allowlist wide enough to include your `SITE_URL` (Stripe rejects
    redirect targets that aren't allowlisted for your account).
 
-### Known gaps before going live
+## Order recording (Stripe webhook)
 
-The current wiring supports test-mode checkout end-to-end. Before you
-switch `STRIPE_SECRET_KEY` to a live-mode `sk_live_` key, close these:
+`create-checkout-session` only starts a Stripe Checkout Session — Stripe,
+not this site, collects the card and completes the charge. Without a
+webhook, nothing on your side would ever find out a payment succeeded.
+`supabase/functions/stripe-webhook/index.ts` closes that: it verifies
+Stripe's signature on the raw request body, then upserts a row into
+`public.orders` (added by `supabase/schema.sql`) keyed on the Stripe
+Checkout Session id, so Stripe's documented at-least-once webhook
+redelivery is a safe no-op rather than a duplicate order.
 
-1. **No Stripe webhook / no order of record.** The Edge Function only
-   creates a Checkout Session — nothing on your side ever records that
-   a payment succeeded. Add a second Edge Function subscribed to the
-   Stripe `checkout.session.completed` webhook (verify the signature
-   with `STRIPE_WEBHOOK_SECRET`) that writes a row into a Supabase
-   `orders` table. The `client_reference_id` on the session is the
-   same token the browser stored in sessionStorage, so it lets you
-   correlate paid sessions back to the originating browser tab (and,
-   once you add auth, to the shopper's account).
-2. **CSP `connect-src` is wildcarded.** `checkout.html` allows
+1. Set the webhook secrets (in addition to the checkout secrets above):
+   ```
+   supabase secrets set STRIPE_WEBHOOK_SECRET=whsec_...
+   supabase secrets set SUPABASE_SERVICE_ROLE_KEY=eyJ...
+   ```
+   `STRIPE_WEBHOOK_SECRET` comes from the Stripe Dashboard webhook
+   endpoint you create in step 3, NOT from your API keys page.
+   `SUPABASE_SERVICE_ROLE_KEY` is under Project Settings → API —
+   treat it like a root password. It is the only credential in this
+   project allowed to bypass `orders`' row-level security (see the
+   comment on that table in `schema.sql`); never put it in `config.js`,
+   never send it to a browser, never commit it.
+2. Deploy the function:
+   ```
+   supabase functions deploy stripe-webhook --no-verify-jwt
+   ```
+   `--no-verify-jwt` is required here too — Stripe calls this endpoint
+   directly with no Supabase auth context. Signature verification
+   inside the function *is* this endpoint's authentication.
+3. In the Stripe Dashboard → Developers → Webhooks, add an endpoint
+   pointing at `https://YOUR-PROJECT-REF.functions.supabase.co/stripe-webhook`
+   and subscribe it to `checkout.session.completed`.
+4. Query recorded orders from the Supabase SQL editor (running as the
+   table owner, which bypasses RLS the same way `service_role` does) —
+   there is deliberately no client-facing read policy on `orders` yet;
+   a customer-facing order-lookup page is a real feature to design later
+   (e.g. a signed lookup link, not a guessable URL), not a retrofit.
+
+## Known gaps before going live
+
+The current wiring supports test-mode checkout end-to-end, with order
+recording. Before you switch `STRIPE_SECRET_KEY` to a live-mode
+`sk_live_` key, close these:
+
+1. **CSP `connect-src` is wildcarded.** `account.html` allows
    `https://*.supabase.co`, which is broader than needed. When you
    deploy, tighten it to your exact project ref
    (`https://YOUR-PROJECT-REF.supabase.co`) so an XSS on the storefront
    couldn't exfiltrate data to some *other* Supabase project.
-3. **Rate limit is best-effort only.** The Edge Function has a small
-   in-memory per-IP counter (10 checkout attempts per 60 s, plus a
-   tighter fallback bucket for IP-less callers) as a speed bump
-   against scripted flooding, but it resets on every cold start and
-   is bypassable by any attacker who can rotate source IPs. For real
-   protection, wire the existing Cloudflare Turnstile plumbing
-   (`TURNSTILE_SITE_KEY` in `config.js` — see the account-creation
-   flow for how it's already used) onto the Proceed-to-Payment
-   button, and validate the token server-side before the Stripe API
-   call. That defends against a determined attacker in a way an
-   in-memory counter cannot.
-4. **Origin allowlist is browser-only.** The Edge Function refuses
-   requests whose `Origin` header isn't on `ALLOWED_ORIGINS`, but the
-   `Origin` header is set by *the caller* — real browsers set it
-   honestly, but `curl` and any scripted client can send any value.
-   Treat this as a defense against accidental cross-origin browser
-   traffic, not against a determined attacker. The Turnstile fix in
-   item 3 also closes this.
+2. **create-checkout-session's rate limit is best-effort only.** It has
+   an in-memory per-IP sliding-window counter (10 checkout attempts per
+   60 s, with a tighter fallback bucket for callers with no trustworthy
+   IP header) as a speed bump against scripted flooding, but it resets
+   on every cold start. It does correctly prefer Cloudflare's
+   unspoofable `cf-connecting-ip` over the client-forgeable
+   `x-forwarded-for`, but a genuinely determined attacker with many
+   real source IPs is not stopped by this alone. For real protection,
+   wire the existing Cloudflare Turnstile plumbing (`TURNSTILE_SITE_KEY`
+   in `config.js` — see the account-creation flow for how it's already
+   used there) onto the Proceed-to-Payment button, and validate the
+   token server-side before the Stripe API call.
+3. **Origin allowlist is browser-only.** Both Edge Functions check the
+   `Origin` header against `ALLOWED_ORIGINS`, but that header is set by
+   *the caller* — real browsers set it honestly, but `curl` and any
+   scripted client can send any value. Treat this as a defense against
+   accidental cross-origin browser traffic, not against a determined
+   attacker. The Turnstile fix in item 2 also closes this for checkout;
+   `stripe-webhook`'s real authentication is its signature check, not
+   its Origin header (Stripe's servers don't send a browser-style
+   Origin at all — the signature is what matters there).
+4. **No customer-facing order lookup.** `orders` intentionally has no
+   read policy for `anon`/`authenticated` yet — see the schema comment.
+   Confirmation is currently just the on-page "payment received"
+   message right after checkout; a returning customer has no way to
+   look up an order later. Needs deliberate design (signed lookup
+   token, or tie orders to `profiles.id` once checkout requires
+   sign-in) before shipping, not a quick permissive policy.

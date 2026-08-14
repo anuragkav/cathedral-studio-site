@@ -37,6 +37,7 @@ import {
 // deno-lint-ignore no-explicit-any
 import {
   clientIpFrom as sharedClientIpFrom,
+  encodeOrderLines,
   isRateLimited as sharedIsRateLimited,
   normalizeBody as sharedNormalizeBody,
   RATE_LIMIT_WINDOW_MS,
@@ -216,6 +217,17 @@ Deno.serve(async (req: Request): Promise<Response> => {
         allowed_countries: ["US", "CA", "GB"],
       },
       shipping_options: shippingOptions,
+      // line_items on the Session object created here are NOT returned by
+      // Stripe's checkout.session.completed webhook payload without an
+      // extra "expand" API call the webhook handler would have to make
+      // (a second round-trip, another place to get the trust boundary
+      // wrong). Stashing the already-validated {id, qty} pairs in
+      // metadata means the webhook can record the order directly from
+      // the webhook payload alone. Values here were already validated by
+      // normalizeBody — this is not new user input crossing the boundary.
+      // encodeOrderLines chunks across catalog_lines_0/1/... to respect
+      // Stripe's 500-char-per-value metadata limit.
+      metadata: encodeOrderLines(normalized.lines),
       // The token round-trips: the client's stashed sessionStorage token
       // is placed into success_url so the client can verify on return
       // that THIS tab initiated the checkout (defeats attacker-crafted

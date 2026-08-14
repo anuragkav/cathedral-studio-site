@@ -35,6 +35,15 @@ $$;
 -- what makes RLS failures in this test suite real: the table owner
 -- bypasses RLS entirely, so a same-role test would pass even if every
 -- policy below were deleted.
+-- service_role is the third role real Supabase requests can run as — the
+-- one the SUPABASE_SERVICE_ROLE_KEY authenticates as, and the only one
+-- that BYPASSES row level security entirely (real Postgres BYPASSRLS
+-- attribute, not a policy). stripe-webhook/index.ts uses this role via
+-- the Supabase JS client's service_role key specifically so it can write
+-- to public.orders, which otherwise has zero permissive policies for any
+-- other role. Testing that bypass for real (not just asserting "there's
+-- no policy so it must be blocked") is what proves the webhook's actual
+-- write path works, not just that everyone else's is blocked.
 do $$
 begin
   if not exists (select 1 from pg_roles where rolname = 'authenticated') then
@@ -43,8 +52,11 @@ begin
   if not exists (select 1 from pg_roles where rolname = 'anon') then
     create role anon;
   end if;
+  if not exists (select 1 from pg_roles where rolname = 'service_role') then
+    create role service_role bypassrls;
+  end if;
 end
 $$;
 
-grant usage on schema auth, public to authenticated, anon;
-grant select on auth.users to authenticated, anon;
+grant usage on schema auth, public to authenticated, anon, service_role;
+grant select on auth.users to authenticated, anon, service_role;

@@ -189,3 +189,79 @@ test("isRateLimited buckets are per-IP — one IP's flood cannot lock out anothe
   assert.equal(V.isRateLimited(buckets, "1.1.1.1", 2000), true);
   assert.equal(V.isRateLimited(buckets, "2.2.2.2", 2000), false);
 });
+
+// encodeOrderLines / decodeOrderLines — the metadata round-trip that lets
+// the stripe-webhook function recover {id, qty} pairs from a Checkout
+// Session's metadata without an extra Stripe API call.
+
+test("encodeOrderLines/decodeOrderLines round-trips a small cart", () => {
+  const lines = [{ id: "men-01", qty: 2 }, { id: "women-13", qty: 1 }];
+  const metadata = V.encodeOrderLines(lines);
+  const decoded = V.decodeOrderLines(metadata);
+  assert.deepEqual(decoded.sort((a, b) => a.id.localeCompare(b.id)), lines.sort((a, b) => a.id.localeCompare(b.id)));
+});
+
+test("encodeOrderLines fits today's full 28-item catalog in a single metadata key", () => {
+  // Sanity check on real-world sizing: today's catalog ids are short
+  // (men-NN/women-NN), so even a maxed-out cart (all 28 lines at the
+  // qty cap) stays well under Stripe's 500-char-per-value limit.
+  const lines = [];
+  for (let i = 1; i <= 14; i++) {
+    lines.push({ id: `men-${String(i).padStart(2, "0")}`, qty: 10 });
+    lines.push({ id: `women-${String(i).padStart(2, "0")}`, qty: 10 });
+  }
+  const metadata = V.encodeOrderLines(lines);
+  assert.equal(Object.keys(metadata).length, 1);
+  assert.ok(metadata.catalog_lines_0.length <= 500);
+  const decoded = V.decodeOrderLines(metadata);
+  assert.equal(decoded.length, lines.length);
+});
+
+test("encodeOrderLines chunks across multiple metadata keys once encoded length exceeds 500 chars", () => {
+  // Forces the boundary explicitly with longer (but still realistic)
+  // ids, rather than relying on today's catalog ever growing enough to
+  // hit it by accident — this is the actual behavior under test, not a
+  // hope that some future catalog change happens to exercise it.
+  const lines = Array.from({ length: 40 }, (_, i) => ({
+    id: `some-long-catalog-identifier-${i}`,
+    qty: 3
+  }));
+  const metadata = V.encodeOrderLines(lines);
+  const keys = Object.keys(metadata);
+  assert.ok(keys.length >= 2, "expected chunking across multiple metadata keys");
+  for (const key of keys) {
+    assert.ok(metadata[key].length <= 500, `metadata value for ${key} must stay within Stripe's 500-char limit`);
+  }
+  const decoded = V.decodeOrderLines(metadata);
+  assert.deepEqual(decoded.sort((a, b) => a.id.localeCompare(b.id)), lines.sort((a, b) => a.id.localeCompare(b.id)));
+});
+
+test("decodeOrderLines returns [] for metadata with no catalog_lines_* keys (e.g. a pre-metadata session)", () => {
+  assert.deepEqual(V.decodeOrderLines({}), []);
+  assert.deepEqual(V.decodeOrderLines({ some_other_key: "value" }), []);
+});
+
+test("decodeOrderLines is defensive against non-object input", () => {
+  assert.deepEqual(V.decodeOrderLines(null), []);
+  assert.deepEqual(V.decodeOrderLines(undefined), []);
+  assert.deepEqual(V.decodeOrderLines("not an object"), []);
+});
+
+test("decodeOrderLines skips malformed pairs instead of throwing (webhook must not crash on an already-paid session)", () => {
+  const decoded = V.decodeOrderLines({
+    catalog_lines_0: "men-01:2,garbage-no-colon,men-13:0,women-01:-3,men-02:3"
+  });
+  // Only the genuinely valid pair should survive: qty must be >= 1 and a
+  // colon must separate id from qty.
+  assert.deepEqual(decoded, [{ id: "men-01", qty: 2 }, { id: "men-02", qty: 3 }]);
+});
+
+test("decodeOrderLines orders chunks numerically, not lexically (catalog_lines_10 after catalog_lines_9, not before catalog_lines_2)", () => {
+  const metadata = {
+    catalog_lines_10: "b-item:1",
+    catalog_lines_2: "a-item:1",
+    catalog_lines_0: "z-item:1"
+  };
+  const decoded = V.decodeOrderLines(metadata);
+  assert.deepEqual(decoded.map((l) => l.id), ["z-item", "a-item", "b-item"]);
+});

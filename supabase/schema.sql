@@ -86,3 +86,50 @@ drop trigger if exists on_profiles_protect_immutable on public.profiles;
 create trigger on_profiles_protect_immutable
   before update on public.profiles
   for each row execute function public.protect_immutable_profile_columns();
+
+-- Orders: written ONLY by the stripe-webhook edge function (via the
+-- service_role key, which bypasses RLS entirely by design — this is the
+-- one and only writer). Checkout is anonymous (see
+-- create-checkout-session's --no-verify-jwt), so there is no auth.uid()
+-- to scope a client-facing policy to; rather than write a policy that
+-- would have to be "true" for anon/authenticated and hope nobody ever
+-- calls it from the client, RLS is enabled with NO policies at all,
+-- which defaults to deny-all for every role except the table owner and
+-- service_role (which bypasses RLS). This table is intentionally
+-- unreachable from any anon/authenticated client request — order lookup
+-- for a customer is a future feature that would need its own
+-- deliberately-scoped read policy (e.g. by a signed lookup token in the
+-- URL, not by anything guessable), not a retrofit onto this table's
+-- default posture.
+create table if not exists public.orders (
+  id uuid primary key default gen_random_uuid(),
+  -- Stripe's Checkout Session id. Unique so the webhook's upsert is
+  -- naturally idempotent against Stripe's documented at-least-once
+  -- delivery (the same event, or a related event for the same session,
+  -- can arrive more than once).
+  stripe_session_id text not null unique,
+  stripe_payment_intent_id text,
+  customer_email text,
+  -- Integer cents, matching cart.js/catalog.ts convention throughout
+  -- this codebase — never a float, for the same reason as everywhere
+  -- else prices are handled here.
+  amount_total_cents integer not null,
+  currency text not null,
+  -- Raw {id, qty} pairs decoded from the Session's metadata (see
+  -- encodeOrderLines/decodeOrderLines in _shared/validate.mjs). Kept as
+  -- jsonb rather than a normalized line-items table because this is a
+  -- point-in-time record of what Stripe actually charged for, not a
+  -- live-editable order — normalizing it would invite someone to "fix"
+  -- a line after the fact, which should never happen to a paid order.
+  line_items jsonb not null,
+  shipping_address jsonb,
+  -- Stripe's own status vocabulary (e.g. "complete", "expired") for the
+  -- Checkout Session, recorded as received rather than reinterpreted.
+  status text not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.orders enable row level security;
+-- No policies defined — see the comment above the table. This is
+-- deliberate default-deny, not an oversight; do not add a permissive
+-- policy here without designing a real customer-scoped access model.
